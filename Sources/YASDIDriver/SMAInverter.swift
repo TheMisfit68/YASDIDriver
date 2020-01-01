@@ -10,54 +10,100 @@ import ClibYASDI
 import Cocoa
 import JVCocoa
 
-// C-callback functions
-// Should always be declared global!!!
+
+//FIXME: - Not used for now, crashes the app
+/**
+ For handling device searches asynchroniously
+ */
 var callBackFunctionForYasdiEvents = {
     (event: TYASDIDetectionSub, deviceHandle: UInt32, param1: UInt32)->()  in
     
     switch event{
     case YASDI_EVENT_DEVICE_ADDED:
-        print("ℹ️ Device \(deviceHandle) added")
+        JVDebugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) added")
     case YASDI_EVENT_DEVICE_REMOVED:
-        print("ℹ️ Device \(deviceHandle) removed")
+        JVDebugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) removed")
     case YASDI_EVENT_DEVICE_SEARCH_END:
-        print("ℹ️ No more devices found")
+        JVDebugger.shared.log(debugLevel: .Info, "No more devices found")
     case YASDI_EVENT_DOWNLOAD_CHANLIST:
-        print("ℹ️ Channels downloaded")
+        JVDebugger.shared.log(debugLevel: .Info, "Channels downloaded")
     default:
-        print("❌ Unkwown event occured during async device detection")
+        JVDebugger.shared.log(debugLevel: .Error, "Unkwown event occured during async device detection")
     }
 }
 
+/**
+ Represents the fysical SMA-brand Solar inverter.
+ Uses the configured drivers to read values from the device
+ */
+@available(OSX 10.15, *)
 public class SMAInverter{
     
     public static var Inverters:[SMAInverter] = []
-    public var inverterRecord:Inverter!
+    
+    private static var ExpectedToBeOnline:Bool{
+        // Determines the hours between wich enough sun is expected to get the devices powered up
+        let sunnyHours = (6...22)
+        let systemTimeStamp = Date()
+        let currentLocalHour = Calendar.current.component(Calendar.Component.hour, from: systemTimeStamp)
+        return sunnyHours ~= currentLocalHour
+    }
     
     var serial: Int?{return inverterRecord.serial}
     var number: Handle?{return inverterRecord.number}
     var name: String?{return inverterRecord.name}
     var type: String?{return inverterRecord.type}
     
+    public var inverterRecord:Inverter!
+    
+    public var spotChannels:[Channel] = []
+    public var parameterChannels:[Channel] = []
+    public var testChannels:[Channel] = []
+    
+    public var display:InverterDisplay!
     public var measurementValues:[Measurement]? = nil // These values will eventually be displayed by the MainViewcontroller
     public var parameterValues:[Measurement]? = nil // These values will eventually be displayed by the parameterViewcontroller
     public var testValues:[Measurement]? = nil // These values will not be displayed for now
     
     private var pollingTimer: Timer! = nil
     
-    private var spotChannels:[Channel] = []
-    private var parameterChannels:[Channel] = []
-    private var testChannels:[Channel] = []
-    
     // MARK: - Inverter setup
-
     public class func handleAllYasdiEvents(){
         yasdiMasterAddEventListener(&callBackFunctionForYasdiEvents, YASDI_EVENT_DEVICE_DETECTION)
+    }
+    
+    public class func createInverters(maxNumberToSearch maxNumber:Int){
+        if SMAInverter.ExpectedToBeOnline{
+            
+            if let devices:[Handle] = searchDevices(maxNumberToSearch:maxNumber){
+                for device in devices{
+                    let inverter = SMAInverter(device)
+                    Inverters.append(inverter)
+                }
+            }
+        }
+    }
+    
+    init(_ device: Handle){
+        
+        composeInverterRecord(fromDevice:device)
+        
+        // Read all channels just once
+        readChannels(maxNumberToSearch: 30, channelType: .allChannels)
+        
+        // Sample spotvalues at a fixed time interval (30seconds here)
+        self.pollingTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { timer in self.readValues(channelType: .spotChannels) }
+        self.pollingTimer.tolerance = 1.0 // Give the processor some slack
+        
+        self.display =  InverterDisplay(forInverter: self,channelNames: ["Pac", "Upv-Ist", "E-Total"])
+        
+        JVDebugger.shared.log(debugLevel: .Succes, "Inverter \(name!) found online")
     }
     
     private class func searchDevices(maxNumberToSearch maxNumber:Int)->[Handle]?{
         
         var devices:[Handle]? = nil
+        
         
         let errorCode:Int32 = -1
         var resultCode:Int32 = errorCode
@@ -84,34 +130,6 @@ public class SMAInverter{
         }
         
         return devices
-    }
-    
-    public class func createInverters(maxNumberToSearch maxNumber:Int){
-        if let devices:[Handle] = searchDevices(maxNumberToSearch:maxNumber){
-            for device in devices{
-                let inverter = SMAInverter(device)
-                Inverters.append(inverter)
-            }
-        }
-    }
-    
-    init(_ device: Handle){
-        
-        composeInverterRecord(fromDevice:device)
-        
-        // Read all channels just once
-        readChannels(maxNumberToSearch: 30, channelType: .allChannels)
-        
-        // Sample spotvalues at a fixed time interval (30seconds here)
-        pollingTimer = Timer.scheduledTimer(timeInterval: 30,
-                                            target: self,
-                                            selector: #selector(self.readValues),
-                                            userInfo: ChannelsType.spotChannels,
-                                            repeats: true
-        )
-        
-        print("✅ Inverter \(name!) found online")
-        
     }
     
     private func composeInverterRecord(fromDevice deviceHandle:Handle){
@@ -160,16 +178,16 @@ public class SMAInverter{
         
         // Archive in SQL and
         // complete the inverter-record with the PK from the dbase
-        inverterRecord.dbase = inverterData
-        let dbaseRecord = inverterRecord.update(matchFields: ["serial"])
-        inverterRecord.inverterID = dbaseRecord?.value(rowNumber: 0, columnName: "inverterID") as? SQLID ?? -1
+        inverterRecord.dbase = YASDIDriver.InvertersDataBase
+        let dbaseRecord = inverterRecord.updateOrAdd(matchFields: ["serial"])
+        dbaseRecord?.value(rowNumber: 0, columnName: "inverterID", copyInto:&inverterRecord.inverterID)
     }
     
     private func readChannels(maxNumberToSearch:Int, channelType:ChannelsType = .allChannels){
         
         var channelTypesToRead = [channelType]
         if channelType == .allChannels{
-            channelTypesToRead = [ChannelsType.spotChannels, ChannelsType.parameterChannels, ChannelsType.testChannels]
+            channelTypesToRead = [.spotChannels, .parameterChannels, .testChannels]
         }
         for typeToRead in channelTypesToRead{
             
@@ -189,7 +207,7 @@ public class SMAInverter{
                 
                 for _ in 0..<numberOfChannels{
                     
-                    let channelNumber = Int(channelHandles.pointee)
+                    let channelNumber = Int(channelHandles.pointee) //channelNumber is the ChannelHandle of the particular channel
                     
                     let errorCode:Int32 = -1
                     var resultCode:Int32 = errorCode
@@ -212,16 +230,16 @@ public class SMAInverter{
                             type: Int(typeToRead.rawValue),
                             number: channelNumber,
                             name: String(cString: channelName),
+                            description: "",
                             unit: String(cString: unit),
-                            inverterID: inverterRecord.inverterID
+                            inverterID: inverterRecord.inverterID!
                         )
-                        
                         
                         // Archive in SQL and
                         // complete the channel-record with the PK from the dbase
-                        channelRecord.dbase = inverterData
-                        let dbaseRecord = channelRecord.update(matchFields:["type","name"])
-                        channelRecord.channelID = dbaseRecord?.value(rowNumber: 0, columnName: "channelID") as? SQLID
+                        channelRecord.dbase = YASDIDriver.InvertersDataBase
+                        let dbaseRecord = channelRecord.updateOrAdd(matchFields:["type","name"])
+                        dbaseRecord?.value(rowNumber: 0, columnName: "channelID", copyInto:&channelRecord.channelID)
                         
                         // Divide all channels found by their channeltype
                         switch typeToRead{
@@ -244,35 +262,33 @@ public class SMAInverter{
         
     }
     
-// MARK: -     Callbackfunction for the timer
-
-    @objc private func readValues(timer:Timer){
+    // MARK: -  Callbackfunction for the pollingtimer
+    private func readValues(channelType:ChannelsType){
         
-        let channelType = timer.userInfo as! ChannelsType
-
-        let sqlTimeStampFormatter = DateFormatter()
-        sqlTimeStampFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ" // GMT date string in SQL-format
-
-        let dateFormatter = DateFormatter()
-        dateFormatter.timeZone = TimeZone.current
-        dateFormatter.dateFormat = "dd-MM-yyyy" // Local date string
-
-        let timeFormatter = DateFormatter()
-        timeFormatter.timeZone = TimeZone.current
-        timeFormatter.dateFormat = "HH:mm:ss" // Local time string
-
-        let systemTimeStamp = Date()
-        let currentLocalHour = Calendar.current.component(Calendar.Component.hour, from: systemTimeStamp)
-
         // Only record dat between 06:00 and 22:59
-        if (6...22) ~= currentLocalHour{
-
+        if SMAInverter.ExpectedToBeOnline{
+            
             var channelTypesToRead = [channelType]
             if channelType == .allChannels{
                 channelTypesToRead = [ChannelsType.allChannels, ChannelsType.parameterChannels, ChannelsType.testChannels]
             }
+            
+            let sqlTimeStampFormatter = DateFormatter()
+            sqlTimeStampFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ" // GMT date string in SQL-format
+            
+            let dateFormatter = DateFormatter()
+            dateFormatter.timeZone = TimeZone.current
+            dateFormatter.dateFormat = "dd-MM-yyyy" // Local date string
+            
+            let timeFormatter = DateFormatter()
+            timeFormatter.timeZone = TimeZone.current
+            timeFormatter.dateFormat = "HH:mm:ss" // Local time string
+            
+            let systemTimeStamp = Date()
+            
+            
             for typeToRead in channelTypesToRead{
-
+                
                 let channelsToRead:[Channel]
                 switch  typeToRead{
                 case .spotChannels:
@@ -284,25 +300,25 @@ public class SMAInverter{
                 default:
                     channelsToRead = spotChannels + parameterChannels + testChannels
                 }
-
+                
                 var currentValues:[Measurement] = []
-
+                
                 for channel in channelsToRead{
-                    let channelNumber = channel.number!
-
+                    let channelNumber = channel.number
+                    
                     var recordedTimeStamp = systemTimeStamp
                     let onlineTimeStamp = GetChannelValueTimeStamp(Handle(channelNumber), number!)
                     if onlineTimeStamp > 0{
                         recordedTimeStamp = Date(timeIntervalSince1970:TimeInterval(onlineTimeStamp))
                     }
-
+                    
                     let currentValue:UnsafeMutablePointer<Double> = UnsafeMutablePointer<Double>.allocate(capacity: 1)
                     let currentValueAsText: UnsafeMutablePointer<CChar> = UnsafeMutablePointer<CChar>.allocate(capacity: MAXCSTRINGLENGTH)
                     let maxChannelAgeInSeconds:DWORD = 5
-
+                    
                     let errorCode:Int32 = -1
                     var  resultCode:Int32 = errorCode
-
+                    
                     resultCode = GetChannelValue(Handle(channelNumber),
                                                  number!,
                                                  currentValue,
@@ -310,51 +326,68 @@ public class SMAInverter{
                                                  DWORD(MAXCSTRINGLENGTH),
                                                  maxChannelAgeInSeconds
                     )
-
-                    if resultCode != errorCode {
-
-                        // Create the measurement-record
-                        var measurementRecord = Measurement(
-                            measurementID: nil,
-//                            samplingTime: timeFormatter.string(from: systemTimeStamp),
-                            timeStamp: sqlTimeStampFormatter.string(from: recordedTimeStamp),
-                            date: dateFormatter.string(from: recordedTimeStamp),
-                            time: timeFormatter.string(from: recordedTimeStamp),
-                            value: currentValue.pointee,
-                            channelID: channel.channelID
-                        )
+                    
+                    var channelRequest = Channel(
+                        type: -1,
+                        number: channelNumber,
+                        name: "",
+                        description: "",
+                        unit: "",
+                        inverterID: -1)
+                    channelRequest.dbase = YASDIDriver.InvertersDataBase
+                    let channel = channelRequest.find(matchFields: ["number"])
+                    var channelID:SQLID?
+                    channel?.value(rowNumber: 0, columnName: "channelID", copyInto:&channelID)
+                    
+                    if let channelID = channelID{
                         
-                        print(measurementRecord)
-
-                        // Archive in SQL and
-                        // complete the measurement-record with the PK from the dbase
-                        measurementRecord.dbase = inverterData
-                        let dbaseRecord = measurementRecord.add()
-                        measurementRecord.channelID = dbaseRecord?.value(rowNumber: 0, columnName: "measurementID") as? SQLID
-
-                        currentValues.append(measurementRecord)
+                        if resultCode != errorCode {
+                            
+                            // Create the measurement-record
+                            var measurementRecord = Measurement(
+                                measurementID: nil,
+                                //                            samplingTime: timeFormatter.string(from: systemTimeStamp),
+                                timeStamp: sqlTimeStampFormatter.string(from: recordedTimeStamp),
+                                date: dateFormatter.string(from: recordedTimeStamp),
+                                time: timeFormatter.string(from: recordedTimeStamp),
+                                value: currentValue.pointee,
+                                channelID: channelID
+                            )
+                            
+                            // Archive in SQL and
+                            // complete the measurement-record with the PK from the dbase
+                            measurementRecord.dbase = YASDIDriver.InvertersDataBase
+                            let dbaseRecord = measurementRecord.add()
+                            dbaseRecord?.value(rowNumber: 0, columnName: "measurementID", copyInto: &measurementRecord.measurementID)
+                            
+                            currentValues.append(measurementRecord)
+                            
+                            
+                        }
                         
-
                     }
-
                 }
-
+                
                 // Divide all channels found, by channeltype
-                switch  typeToRead{
-                case .spotChannels:
-                    measurementValues = currentValues
-                case .parameterChannels:
-                    parameterValues = currentValues
-                case .testChannels:
-                    testValues = currentValues
-                default:
-                    break
+                if currentValues.count > 0{
+                    switch  typeToRead{
+                    case .spotChannels:
+                        measurementValues = currentValues
+                    case .parameterChannels:
+                        parameterValues = currentValues
+                    case .testChannels:
+                        testValues = currentValues
+                    default:
+                        break
+                    }
                 }
-
+                
             }
-
         }
     }
+    
+    
 }
+
 
 

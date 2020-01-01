@@ -1,17 +1,18 @@
 import Foundation
 import ClibYASDI
+import JVCocoa
 
 public class YASDIDriver{
     
     static let ConfigFileName = "YasdiConfigFile.ini"
-    static let InverterDataFileName = "InverterData.sqlite"
+    static let InvertersDataFileName = "InvertersData.sqlite"
     
     static let DefaultFilemanager =  FileManager.default
     static let ResourceFolder = Bundle.main.resourceURL?.appendingPathComponent("YASDI")
-    static let SupportFolder = DefaultFilemanager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+    static let SupportFolder = DefaultFilemanager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("YASDI")
     static let ConfigFile = SupportFolder?.appendingPathComponent(ConfigFileName)
-    static let InverterData = SupportFolder?.appendingPathComponent(InverterDataFileName)
-    
+    static let InvertersDataFile = SupportFolder?.appendingPathComponent(InvertersDataFileName)
+    static var InvertersDataBase:JVSQLdbase! = nil
     
     static var Drivers:[YASDIDriver] = []
     
@@ -24,25 +25,26 @@ public class YASDIDriver{
     let name:String
     var state:State
     
-    public class func installDrivers()->Bool{
+    public class func InstallDrivers()->[YASDIDriver]{
         
         installResourcesInSupportFolder()
+        if let dbasePath =  InvertersDataFile?.path, DefaultFilemanager.fileExists(atPath: dbasePath){
+            InvertersDataBase = JVSQLdbase.Open(file:InvertersDataFile!.path)
+        }
         
         if let numberOfDrivers = readTheConfigFile(){
             
             for driverNumber in 0..<numberOfDrivers{
                 let driver = YASDIDriver(driverNumber)
-                if !driver.setOnline(){
-                    return false
+                if driver.setOnline(){
+                    YASDIDriver.Drivers.append(driver)
                 }
-                YASDIDriver.Drivers.append(driver)
             }
-            
         }
-        return true
+        return YASDIDriver.Drivers
     }
     
-    public class func unInstallDrivers(){
+    public class func UnInstallDrivers(){
         
         let numberOfDrivers = YASDIDriver.Drivers.count
         
@@ -50,27 +52,19 @@ public class YASDIDriver{
             let driver = YASDIDriver(driverNumber)
             driver.setOffline()
         }
-        
-        
+        InvertersDataBase.close()
     }
     
     private class func installResourcesInSupportFolder() {
         
+        
         if let supportFolder = SupportFolder {
             
             // Create supportFolder if needed
-            var isFolder:ObjCBool = false
-            let supportFolderExists = DefaultFilemanager.fileExists(atPath: supportFolder.path, isDirectory: &isFolder) && isFolder.boolValue
-            if !supportFolderExists{
-                do {
-                    try DefaultFilemanager.createDirectory(atPath: supportFolder.path, withIntermediateDirectories: true, attributes: nil)
-                } catch {
-                    //TODO: - finish errorHandling
-                }
-            }
+            DefaultFilemanager.checkForDirectory(supportFolder, createIfNeeded: true)
             
             // Install the files in it
-            let supportfilesToInstall = [ConfigFile, InverterData]
+            let supportfilesToInstall = [ConfigFile, InvertersDataFile]
             
             for supportfile in supportfilesToInstall{
                 let allReadyInstalled = DefaultFilemanager.fileExists(atPath:supportfile!.path)
@@ -80,7 +74,7 @@ public class YASDIDriver{
                         
                         let fileName = supportfile?.lastPathComponent
                         let resourceURL = resourceFolder.appendingPathComponent(fileName!)
-                                                
+                        
                         do {
                             try FileManager.default.copyItem(at: resourceURL, to: supportfile!)
                         } catch {
@@ -103,7 +97,7 @@ public class YASDIDriver{
         if resultCode != errorCode{
             return Int(numberOfAvailableDrivers.pointee)
         }else{
-            print("❌ ERROR: Inifile '\(ConfigFile?.path)' not found or not readable!")
+            JVDebugger.shared.log(debugLevel: .Error, "Inifile '\(ConfigFile?.path ?? "")' not found or not readable!")
             return nil
         }
         
@@ -121,7 +115,8 @@ public class YASDIDriver{
         if resultCode != errorCode{
             self.name = String(cString: driverName)
         }else{
-            self.name = "❌ ERROR: Unknown driver"
+            self.name = "Unknown driver"
+            JVDebugger.shared.log(debugLevel: .Error, "Unknown driver")
         }
         
         self.state = State.offline
@@ -138,22 +133,20 @@ public class YASDIDriver{
         
         if resultCode != errorCode{
             state = State.online
-            print("✅ Driver \(name) is now online")
+            JVDebugger.shared.log(debugLevel: .Succes, "Driver \(name) is now online")
             return true
         }else{
             state = State.offline
-            print("❌ ERROR: Failed to set driver \(name) online")
+            JVDebugger.shared.log(debugLevel: .Error, "Failed to set driver \(name) online")
             return false
         }
         
     }
     
     private func setOffline(){
-        
         yasdiMasterSetDriverOffline(Handle(number))
         state = State.offline
-        print("ℹ️ Driver \(name) is back offline")
-        
+        JVDebugger.shared.log(debugLevel: .Info, "Driver \(name) is back offline")
     }
     
 }
