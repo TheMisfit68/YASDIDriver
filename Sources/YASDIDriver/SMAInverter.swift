@@ -12,9 +12,8 @@ import JVCocoa
 
 
 //FIXME: - Not used for now, crashes the app
-/**
- For handling device searches asynchroniously
- */
+//For handling device searches asynchroniously
+
 var callBackFunctionForYasdiEvents = {
     (event: TYASDIDetectionSub, deviceHandle: UInt32, param1: UInt32)->()  in
     
@@ -32,14 +31,20 @@ var callBackFunctionForYasdiEvents = {
     }
 }
 
-/**
- Represents the fysical SMA-brand Solar inverter.
- Uses the configured drivers to read values from the device
- */
+
+//Represents the fysical SMA-brand Solar inverter.
+//Uses the configured drivers to read values from the device
+
 @available(OSX 10.15, *)
 public class SMAInverter{
     
-    public static var Inverters:[SMAInverter] = []
+    public static var OnlineInverters:[SMAInverter] = []
+    public static var ArchivedInverters:[Int]?{
+        let InvertersDataBase:JVSQLdbase! = YASDIDriver.InvertersDataBase
+        let sqlStatement = "SELECT DISTINCT Serial FROM Inverter"
+        let OnlineInverters = InvertersDataBase.select(statement: sqlStatement)?.data.map{$0[0] as! Int}
+        return OnlineInverters
+    }
     
     private static var ExpectedToBeOnline:Bool{
         // Determines the hours between wich enough sun is expected to get the devices powered up
@@ -60,11 +65,12 @@ public class SMAInverter{
     public var parameterChannels:[Channel] = []
     public var testChannels:[Channel] = []
     
-    public var display:InverterDisplay!
-    public var measurementValues:[Measurement]? = nil // These values will eventually be displayed by the MainViewcontroller
-    public var parameterValues:[Measurement]? = nil // These values will eventually be displayed by the parameterViewcontroller
-    public var testValues:[Measurement]? = nil // These values will not be displayed for now
+    public let display:DigitalDisplayView
+    public var measurementValues:[Measurement]? = nil
+    public var parameterValues:[Measurement]? = nil // These values will not be used for now
+    public var testValues:[Measurement]? = nil // These values will not be used for now
     
+    private let dataToDisplay:DataSummary
     private var pollingTimer: Timer! = nil
     
     // MARK: - Inverter setup
@@ -78,7 +84,7 @@ public class SMAInverter{
             if let devices:[Handle] = searchDevices(maxNumberToSearch:maxNumber){
                 for device in devices{
                     let inverter = SMAInverter(device)
-                    Inverters.append(inverter)
+                    OnlineInverters.append(inverter)
                 }
             }
         }
@@ -86,16 +92,18 @@ public class SMAInverter{
     
     init(_ device: Handle){
         
+        self.dataToDisplay = DataSummary(channelNames: ["Pac", "Upv-Ist", "E-Total"])
+        self.display = DigitalDisplayView(model:dataToDisplay)
+        
         composeInverterRecord(fromDevice:device)
         
         // Read all channels just once
         readChannels(maxNumberToSearch: 30, channelType: .allChannels)
         
         // Sample spotvalues at a fixed time interval (30seconds here)
-        self.pollingTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { timer in self.readValues(channelType: .spotChannels) }
+        self.pollingTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { timer in self.readValues(channelType: .spotChannels) }
         self.pollingTimer.tolerance = 1.0 // Give the processor some slack
-        
-        self.display =  InverterDisplay(forInverter: self,channelNames: ["Pac", "Upv-Ist", "E-Total"])
+        self.pollingTimer.fire()
         
         JVDebugger.shared.log(debugLevel: .Succes, "Inverter \(name!) found online")
     }
@@ -103,7 +111,6 @@ public class SMAInverter{
     private class func searchDevices(maxNumberToSearch maxNumber:Int)->[Handle]?{
         
         var devices:[Handle]? = nil
-        
         
         let errorCode:Int32 = -1
         var resultCode:Int32 = errorCode
@@ -272,10 +279,7 @@ public class SMAInverter{
             if channelType == .allChannels{
                 channelTypesToRead = [ChannelsType.allChannels, ChannelsType.parameterChannels, ChannelsType.testChannels]
             }
-            
-            let sqlTimeStampFormatter = DateFormatter()
-            sqlTimeStampFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ" // GMT date string in SQL-format
-            
+                        
             let dateFormatter = DateFormatter()
             dateFormatter.timeZone = TimeZone.current
             dateFormatter.dateFormat = "dd-MM-yyyy" // Local date string
@@ -284,8 +288,8 @@ public class SMAInverter{
             timeFormatter.timeZone = TimeZone.current
             timeFormatter.dateFormat = "HH:mm:ss" // Local time string
             
-            let systemTimeStamp = Date()
-            
+            // Use timestamp from beginning of this pollingcycle as the default
+            var recordedTimeStamp = Date().timeIntervalSince1970
             
             for typeToRead in channelTypesToRead{
                 
@@ -306,10 +310,10 @@ public class SMAInverter{
                 for channel in channelsToRead{
                     let channelNumber = channel.number
                     
-                    var recordedTimeStamp = systemTimeStamp
+                    // replace timestamp with more accurate online version if possible
                     let onlineTimeStamp = GetChannelValueTimeStamp(Handle(channelNumber), number!)
                     if onlineTimeStamp > 0{
-                        recordedTimeStamp = Date(timeIntervalSince1970:TimeInterval(onlineTimeStamp))
+                        recordedTimeStamp = TimeInterval(onlineTimeStamp)
                     }
                     
                     let currentValue:UnsafeMutablePointer<Double> = UnsafeMutablePointer<Double>.allocate(capacity: 1)
@@ -346,10 +350,9 @@ public class SMAInverter{
                             // Create the measurement-record
                             var measurementRecord = Measurement(
                                 measurementID: nil,
-                                //                            samplingTime: timeFormatter.string(from: systemTimeStamp),
-                                timeStamp: sqlTimeStampFormatter.string(from: recordedTimeStamp),
-                                date: dateFormatter.string(from: recordedTimeStamp),
-                                time: timeFormatter.string(from: recordedTimeStamp),
+                                timeStamp: recordedTimeStamp,
+                                date: dateFormatter.string(from: Date(timeIntervalSince1970: recordedTimeStamp)),
+                                time: timeFormatter.string(from: Date(timeIntervalSince1970: recordedTimeStamp)),
                                 value: currentValue.pointee,
                                 channelID: channelID
                             )
@@ -384,10 +387,11 @@ public class SMAInverter{
                 
             }
         }
+        dataToDisplay.createTextLines(fromInverter: self)
     }
     
-    
 }
+
 
 
 

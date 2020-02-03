@@ -9,6 +9,8 @@ import Foundation
 import ClibYASDI
 import JVCocoa
 
+let inverterYieldFaultPercentage = 1.03550
+
 typealias Handle = DWORD
 let MAXCSTRINGLENGTH:Int = 32
 
@@ -45,8 +47,7 @@ public struct Channel:SQLRecordable{
 public struct Measurement:SQLRecordable{
     
     var measurementID: SQLID?
-//    var samplingTime:String
-    var timeStamp:String
+    var timeStamp:TimeInterval
     var date: String
     var time: String
     var value: Double

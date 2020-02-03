@@ -2,6 +2,8 @@ import Foundation
 import ClibYASDI
 import JVCocoa
 
+
+@available(OSX 10.15, *)
 public class YASDIDriver{
     
     static let ConfigFileName = "YasdiConfigFile.ini"
@@ -12,7 +14,7 @@ public class YASDIDriver{
     static let SupportFolder = DefaultFilemanager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("YASDI")
     static let ConfigFile = SupportFolder?.appendingPathComponent(ConfigFileName)
     static let InvertersDataFile = SupportFolder?.appendingPathComponent(InvertersDataFileName)
-    static var InvertersDataBase:JVSQLdbase! = nil
+    public static var InvertersDataBase:JVSQLdbase! = nil
     
     static var Drivers:[YASDIDriver] = []
     
