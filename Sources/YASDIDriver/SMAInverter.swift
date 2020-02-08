@@ -42,8 +42,8 @@ public class SMAInverter{
     public static var ArchivedInverters:[Int]?{
         let InvertersDataBase:JVSQLdbase! = YASDIDriver.InvertersDataBase
         let sqlStatement = "SELECT DISTINCT Serial FROM Inverter"
-        let OnlineInverters = InvertersDataBase.select(statement: sqlStatement)?.data.map{$0[0] as! Int}
-        return OnlineInverters
+        let archivedInverters = InvertersDataBase.select(statement: sqlStatement)?.data.map{$0[0] as! Int}
+        return archivedInverters
     }
     
     private static var ExpectedToBeOnline:Bool{

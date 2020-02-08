@@ -14,17 +14,19 @@ import SwiftSMTP
 public class SMTPClient{
     
     let standardUserDefaults = UserDefaults.standard
+    let smtpSettings:[String:Any]
     let smtpConnection:SMTP
     
     public init(){
         
-        // Read all SMTP-settings from the UserDefaults
+        smtpSettings = standardUserDefaults.dictionary(forKey: "SMTPsettings")!
+        
         self.smtpConnection = SMTP(
-            hostname: standardUserDefaults.string(forKey: "SMTPserver") ?? "",
-            email: standardUserDefaults.string(forKey: "SMTPusername") ?? "",
-            password: standardUserDefaults.string(forKey: "SMTPpassword") ?? "",
-            port: Int32(standardUserDefaults.integer(forKey: "SMTPport")),
-            tlsMode: standardUserDefaults.bool(forKey: "SMTPusesSSL") ? .normal : .ignoreTLS,
+            hostname: smtpSettings["Server"] as! String,
+            email: smtpSettings["EmailAddress"] as! String,
+            password: smtpSettings["Password"] as!String,
+            port: Int32(smtpSettings["Port"] as! Int),
+            tlsMode: smtpSettings["UseSSL"] as! Bool ? .normal : .ignoreTLS,
             tlsConfiguration: nil,
             authMethods: [.login],
             domainName: "localhost",
@@ -32,5 +34,7 @@ public class SMTPClient{
         )
         
     }
+    
+    
     
 }

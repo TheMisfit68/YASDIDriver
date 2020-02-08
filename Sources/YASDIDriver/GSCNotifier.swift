@@ -15,11 +15,17 @@ import SwiftSMTP
 @available(OSX 10.15, *)
 public class GSCNotifier:SMTPClient{
     
+    var gscNotifierSettings:[String:Any] = [:]
+    
     let inverterDbase:JVSQLdbase = YASDIDriver.InvertersDataBase
     var checkForGSCtimer:Timer!
     
     override public init() {
+       
         super.init()
+        
+        gscNotifierSettings = standardUserDefaults.dictionary(forKey: "GSCnotifierSettings")!
+        
         // Check every hour for a new GSC and report if so
         checkForGSCtimer = Timer.scheduledTimer(withTimeInterval: 3600.0, repeats: true) { timer in self.checkForGSC() }
         checkForGSCtimer.tolerance = 60.0 // Give the processor some slack
@@ -41,12 +47,14 @@ public class GSCNotifier:SMTPClient{
                     if totalInverterYield is Double{
                         let compensatedInverterYield = (totalInverterYield as! Double)*inverterYieldFaultPercentage
                         
-                        let previousGSC = standardUserDefaults.integer(forKey: "PreviousGSC")
+                        let previousGSC = gscNotifierSettings["PreviousGSC"] as! Int
                         let currentGSC = Int(compensatedInverterYield/1000)
                         
                         if currentGSC > previousGSC{
                             sendEmailNotification(totalInverterYield: compensatedInverterYield, yieldPerGSC: 1000, revenuePerGSC: 450)
-                            standardUserDefaults.set(currentGSC, forKey: "PreviousGSC")
+                            
+                            gscNotifierSettings["PreviousGSC"] = currentGSC
+                            standardUserDefaults.set(gscNotifierSettings, forKey: "GSCnotifierSettings")
                         }
                     }
                 }
@@ -61,10 +69,10 @@ public class GSCNotifier:SMTPClient{
         let totalRevenue = Int(totalInverterYield)/yieldPerGSC*revenuePerGSC
         let inverterYield = String(format: "%.0f", totalInverterYield)
         
-        let publisher:Mail.User = Mail.User(name: "Publisher", email: standardUserDefaults.string(forKey: "SMTPusername") ?? "")
+        let publisher:Mail.User = Mail.User(name: "Publisher", email: smtpSettings["EmailAddress"] as! String)
         
         var subscribers:[Mail.User] = []
-        let subscriberEmails = standardUserDefaults.stringArray(forKey: "Subscribers")!
+        let subscriberEmails = gscNotifierSettings["Subscribers"] as! [String]
         for (subscriberNumber, subscriberEmail) in subscriberEmails.enumerated(){
             subscribers.append( Mail.User(name: "Subscriber\(subscriberNumber)", email:subscriberEmail) )
         }
