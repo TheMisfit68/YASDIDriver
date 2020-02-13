@@ -11,7 +11,7 @@ import JVCocoa
 import SwiftSMTP
 
 #if DEBUG
-let testToLocalMail = false
+let ccReportToLocalMail = false
 #endif
 
 @available(OSX 10.15, *)
@@ -217,20 +217,22 @@ public class SunnyPortalReporter:SMTPClient{
                 let fileDate = fileDateFormatter.date(from: fileDateString)!
                 let mailDateString = mailDateFormatter.string(from: fileDate)
 
-                let userName = smtpSettings["UserName"] as! String
-                let emailAddress = smtpSettings["EmailAddress"] as! String
-                let sender:Mail.User = Mail.User(name: userName, email: emailAddress)
+                let fromAddress = sunnyPortalSettings["Account"] as! String
+                let toAddress = "datacenter@sunny-portal.de"
+                let replyAddress = fromAddress
+                let testAddress = replyAddress
+                
+                let sender:Mail.User = Mail.User(name: "SunnyPortalAccount", email: fromAddress)
+                
                 var recepients:[Mail.User] = []
+                recepients.append( Mail.User(name: "SunnyPortal", email:toAddress) )
+                
+                var ccRecepients:[Mail.User] = []
                 #if DEBUG
-                if testToLocalMail == false{
-                    recepients.append( Mail.User(name: "Sunnyportal", email:"datacenter@sunny-portal.de") )
-                }else{
-                    recepients.append( Mail.User(name: "Testuser", email: standardUserDefaults.string(forKey: "TestEmailAddress") ?? "" ))
+                if ccReportToLocalMail == false{
+                    ccRecepients.append( Mail.User(name: "TestUser", email: testAddress))
                 }
-                #else
-                recepients.append( Mail.User(name: "Sunnyportal", email:"datacenter@sunny-portal.de") )
                 #endif
-                let replyAdress = sunnyPortalSettings["Account"] as! String
                 
                 let reportFilePath = reportsFolderURL.appendingPathComponent(reportFile).path
                 let csvAttachment = Attachment(
@@ -241,10 +243,11 @@ public class SunnyPortalReporter:SMTPClient{
                 let reportMail = Mail(
                     from: sender,
                     to: recepients,
+                    cc: ccRecepients,
                     subject: "SUNNY-MAIL \(mailDateString)...",
                     text: "This mail was send automatically by Sunny Data Control 3.9.3.4. Please do not reply...",
                     attachments: [csvAttachment],
-                    additionalHeaders: ["REPLY-TO": replyAdress]
+                    additionalHeaders: ["REPLY-TO": replyAddress]
                 )
                 
                 emailsToSend.append((mail:reportMail, attachmentFile:reportFilePath))

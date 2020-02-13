@@ -31,10 +31,10 @@ public class YASDIDriver{
         
         installResourcesInSupportFolder()
         if let dbasePath =  InvertersDataFile?.path, DefaultFilemanager.fileExists(atPath: dbasePath){
-            InvertersDataBase = JVSQLdbase.Open(file:InvertersDataFile!.path)
+            InvertersDataBase = JVSQLdbase.Open(file:dbasePath)
         }
         
-        if let numberOfDrivers = readTheConfigFile(){
+        if let numberOfDrivers = loadDriversFromConfigFile(){
             
             for driverNumber in 0..<numberOfDrivers{
                 let driver = YASDIDriver(driverNumber)
@@ -88,7 +88,7 @@ public class YASDIDriver{
         }
     }
     
-    private class func readTheConfigFile()->Int?{
+    private class func loadDriversFromConfigFile()->Int?{
         
         let errorCode:Int32 = -1
         var resultCode:Int32 = errorCode
@@ -99,7 +99,7 @@ public class YASDIDriver{
         if resultCode != errorCode{
             return Int(numberOfAvailableDrivers.pointee)
         }else{
-            JVDebugger.shared.log(debugLevel: .Error, "Inifile '\(ConfigFile?.path ?? "")' not found or not readable!")
+            JVDebugger.shared.log(debugLevel: .Error, "Not able to load any drivers from '\(ConfigFile?.path ?? "")'")
             return nil
         }
         
