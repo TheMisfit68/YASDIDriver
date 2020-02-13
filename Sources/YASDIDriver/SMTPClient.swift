@@ -14,7 +14,7 @@ import SwiftSMTP
 public class SMTPClient{
     
     let standardUserDefaults = UserDefaults.standard
-    var smtpSettings:[String:Any]
+    let smtpSettings:[String:Any]
     let smtpConnection:SMTP
     
     public init(){

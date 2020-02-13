@@ -10,13 +10,15 @@ import ClibYASDI
 import JVCocoa
 import SwiftSMTP
 
+
 #if DEBUG
-let ccReportToLocalMail = false
+let ccReportToLocalMail = true
 #endif
 
 @available(OSX 10.15, *)
 public class SunnyPortalReporter:SMTPClient{
     
+    let disableReporter = true
     var sunnyPortalSettings:[String:Any] = [:]
     
     let channelsToReport:[String] = ["E-Total", "h-Total", "h-On", "Netz-Ein", "Event-Cnt", "Seriennummer", "Pac", "Iac-Ist", "Ipv", "Upv max"]
@@ -60,7 +62,7 @@ public class SunnyPortalReporter:SMTPClient{
         super.init()
         
         sunnyPortalSettings = standardUserDefaults.dictionary(forKey: "SunnyPortalSettings")!
- 
+        
         // Try to send a report every hour
         reportTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { timer in self.sendReport() }
         reportTimer.tolerance = 2.0 // Give the processor some slack
@@ -71,38 +73,40 @@ public class SunnyPortalReporter:SMTPClient{
     
     private func sendReport(){
         
-        let startOfReport = Date(timeIntervalSince1970: sunnyPortalSettings["StartOfNextReport"] as! Double)
-        
-        let endOfReport:Date
-        let now = Date()
-        let minusOneHour = DateComponents(hour: -1)
-        var oneHourAgo = Calendar.current.date(byAdding: minusOneHour, to: now)
-        oneHourAgo = Calendar.autoupdatingCurrent.date(bySetting: .minute, value: 0, of: oneHourAgo!)
-        endOfReport = Calendar.autoupdatingCurrent.date(bySetting: .second, value: 0, of: oneHourAgo!)!
-        
-        reportsPeriod = (start:startOfReport.timeIntervalSince1970,
-                         end:endOfReport.timeIntervalSince1970)
-        
-        if let inverters = SMAInverter.ArchivedInverters{
+        if disableReporter == false{
             
-            inverters.forEach{
-                inverterSerial = $0
+            let startOfReport = Date(timeIntervalSince1970: sunnyPortalSettings["StartOfNextReport"] as! Double)
+            
+            let endOfReport:Date
+            let now = Date()
+            let minusOneHour = DateComponents(hour: -1)
+            var oneHourAgo = Calendar.current.date(byAdding: minusOneHour, to: now)
+            oneHourAgo = Calendar.autoupdatingCurrent.date(bySetting: .minute, value: 0, of: oneHourAgo!)
+            endOfReport = Calendar.autoupdatingCurrent.date(bySetting: .second, value: 0, of: oneHourAgo!)!
+            
+            reportsPeriod = (start:startOfReport.timeIntervalSince1970,
+                             end:endOfReport.timeIntervalSince1970)
+            
+            if let inverters = SMAInverter.ArchivedInverters{
                 
-                reportData = nil
-                searchUnarchivedData()
-                if reportData != nil {
-                    saveAsCSVFiles()
-                    sendEmails()
+                inverters.forEach{
+                    inverterSerial = $0
                     
+                    reportData = nil
+                    searchUnarchivedData()
+                    if reportData != nil {
+                        saveAsCSVFiles()
+                        sendEmails()
+                        
+                    }
                 }
             }
+            
+            sunnyPortalSettings["StartOfNextReport"]  = reportsPeriod.end+1
+            standardUserDefaults.set(sunnyPortalSettings, forKey: "SunnyPortalSettings")
         }
-        
-        
-        sunnyPortalSettings["StartOfNextReport"]  = reportsPeriod.end+1
-        standardUserDefaults.set(sunnyPortalSettings, forKey: "SunnyPortalSettings")
-
     }
+    
     
     private func searchUnarchivedData(){
         
@@ -182,15 +186,9 @@ public class SunnyPortalReporter:SMTPClient{
             let fileDateString = fileDateFormatter.string(from: date)
             let csvFilename = "SunnyPortalExport\(fileDateString).csv"
             let csvFileUrl = reportsFolderURL.appendingPathComponent(csvFilename)
-            
-            //            do {
-            //                                   if FileManager.default.fileExists(atPath: attachmentFilePath){
-            //                                       try FileManager.default.removeItem(atPath: attachmentFilePath)
-            //                                   }
-            //                                   try FileManager.default.moveItem(atPath: reportFilePath, toPath:attachmentFilePath)
-            //            }catch let error as NSError {
-            //                      print("Couldn't prepare email-attachment \(error)")
-            //                  }
+            if FileManager.default.fileExists(atPath: csvFileUrl.path){
+                try? FileManager.default.removeItem(atPath: csvFileUrl.path)
+            }
             
             do {
                 try csvSource.write(to: csvFileUrl, atomically: true, encoding: .windowsCP1252)
@@ -211,12 +209,12 @@ public class SunnyPortalReporter:SMTPClient{
         while let file = filesInReportFolder?.nextObject() as? String {
             if (file.hasSuffix(".csv")){
                 let reportFile = file
-            
+                
                 // Get the data to pepare the mails with
                 let fileDateString = String(reportFile[reportFile.range(of: "\\d\\d\\d\\d\\d\\d\\d\\d", options: .regularExpression)!])
                 let fileDate = fileDateFormatter.date(from: fileDateString)!
                 let mailDateString = mailDateFormatter.string(from: fileDate)
-
+                
                 let fromAddress = sunnyPortalSettings["Account"] as! String
                 let toAddress = "datacenter@sunny-portal.de"
                 let replyAddress = fromAddress
@@ -275,10 +273,13 @@ public class SunnyPortalReporter:SMTPClient{
                                     // `sent` is an array of the successfully sent `Mail`s.
                                     // `failed` is an array of (Mail, Error)--the failed `Mail`s and their corresponding errors.
                                     sent.forEach({
+                                        // Cleanup Attachment after succesfull send
                                         let finishedMail = $0
                                         let origin = emailsToSend.filter{($0.mail.id==finishedMail.id)}.first
                                         let attachmentFile = origin?.attachmentFile
-                                        try? FileManager.default.removeItem(atPath: attachmentFile!)
+                                        if FileManager.default.fileExists(atPath: attachmentFile!){
+                                            try? FileManager.default.removeItem(atPath: attachmentFile!)
+                                        }
                                     })
                                     
             }
