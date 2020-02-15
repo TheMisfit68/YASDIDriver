@@ -5,6 +5,7 @@
 //  Created by Jan Verrept on 21/12/2019.
 //
 
+import Cocoa
 import Foundation
 import ClibYASDI
 import JVCocoa
@@ -18,7 +19,7 @@ let ccReportToLocalMail = true
 @available(OSX 10.15, *)
 public class SunnyPortalReporter:SMTPClient{
     
-    let disableReporter = true
+    let disableReporter = false
     var sunnyPortalSettings:[String:Any] = [:]
     
     let channelsToReport:[String] = ["E-Total", "h-Total", "h-On", "Netz-Ein", "Event-Cnt", "Seriennummer", "Pac", "Iac-Ist", "Ipv", "Upv max"]
@@ -40,7 +41,6 @@ public class SunnyPortalReporter:SMTPClient{
     let fileDateFormatter = DateFormatter()
     let mailDateFormatter = DateFormatter()
     
-    
     var reportData: SQLRecordSet!
     var hourlyDataSet:[Date:[SQLRow]]!
     var reportsFolderURL:URL!
@@ -53,7 +53,7 @@ public class SunnyPortalReporter:SMTPClient{
         reportDateFormatter.dateFormat = "MM/dd/yyyy"
         reportDateFormatter.timeZone = Calendar.autoupdatingCurrent.timeZone
         
-        fileDateFormatter.dateFormat = "yyyyMMdd"
+        fileDateFormatter.dateFormat = "yyyyMMdd [HH]"
         fileDateFormatter.timeZone = Calendar.autoupdatingCurrent.timeZone
         
         mailDateFormatter.dateFormat = "dd/MM/yyyy"
@@ -76,7 +76,6 @@ public class SunnyPortalReporter:SMTPClient{
         if disableReporter == false{
             
             let startOfReport = Date(timeIntervalSince1970: sunnyPortalSettings["StartOfNextReport"] as! Double)
-            
             let endOfReport:Date
             let now = Date()
             let minusOneHour = DateComponents(hour: -1)
@@ -85,7 +84,7 @@ public class SunnyPortalReporter:SMTPClient{
             endOfReport = Calendar.autoupdatingCurrent.date(bySetting: .second, value: 0, of: oneHourAgo!)!
             
             reportsPeriod = (start:startOfReport.timeIntervalSince1970,
-                             end:endOfReport.timeIntervalSince1970)
+                                         end:endOfReport.timeIntervalSince1970)
             
             if let inverters = SMAInverter.ArchivedInverters{
                 
@@ -128,7 +127,8 @@ public class SunnyPortalReporter:SMTPClient{
             hourlyDataSet = Dictionary(
                 grouping:dataSet.data,
                 by: {
-                    let reportDate = localDateFormatter.date(from: "\($0[columnNumberDate]!) \($0[columnNumberHour]!):00:00")
+                    let dateString =  "\($0[columnNumberDate]!) \($0[columnNumberHour]!):00:00"
+                    let reportDate = localDateFormatter.date(from:dateString)
                     return reportDate!}
             )
         }
@@ -182,7 +182,7 @@ public class SunnyPortalReporter:SMTPClient{
             let documentsFolderURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             reportsFolderURL = documentsFolderURL.appendingPathComponent("YASDI-reports")
             FileManager.default.checkForDirectory(reportsFolderURL, createIfNeeded: true)
-            
+                        
             let fileDateString = fileDateFormatter.string(from: date)
             let csvFilename = "SunnyPortalExport\(fileDateString).csv"
             let csvFileUrl = reportsFolderURL.appendingPathComponent(csvFilename)
@@ -204,17 +204,19 @@ public class SunnyPortalReporter:SMTPClient{
     private func sendEmails(){
         
         let filesInReportFolder = FileManager.default.enumerator(atPath: reportsFolderURL.path)
-        var emailsToSend:[(mail:Mail, attachmentFile:String)] = []
+        var emailsToSend:[(mail:Mail, reportFile:URL)] = []
         
-        while let file = filesInReportFolder?.nextObject() as? String {
-            if (file.hasSuffix(".csv")){
-                let reportFile = file
+        while let fileName = filesInReportFolder?.nextObject() as? String {
+            if (fileName.hasSuffix(".csv")){
+                let reportName = fileName
+                let reportFile = reportsFolderURL.appendingPathComponent(reportName)
                 
-                // Get the data to pepare the mails with
-                let fileDateString = String(reportFile[reportFile.range(of: "\\d\\d\\d\\d\\d\\d\\d\\d", options: .regularExpression)!])
-                let fileDate = fileDateFormatter.date(from: fileDateString)!
-                let mailDateString = mailDateFormatter.string(from: fileDate)
+                let reportDateString = String(reportName[reportName.range(of: "\\d\\d\\d\\d\\d\\d\\d\\d\\s\\[\\d\\d\\]",options: .regularExpression)!])
+                let reportDate = fileDateFormatter.date(from: reportDateString)!
+                let mailDateString = mailDateFormatter.string(from: reportDate)
                 
+                let attachmentName = reportName.replace(matchPattern: "\\s\\[\\d\\d\\]", replacementPattern: "", useRegex: true)
+
                 let fromAddress = sunnyPortalSettings["Account"] as! String
                 let toAddress = "datacenter@sunny-portal.de"
                 let replyAddress = fromAddress
@@ -227,14 +229,14 @@ public class SunnyPortalReporter:SMTPClient{
                 
                 var ccRecepients:[Mail.User] = []
                 #if DEBUG
-                if ccReportToLocalMail == false{
+                if ccReportToLocalMail{
                     ccRecepients.append( Mail.User(name: "TestUser", email: testAddress))
                 }
                 #endif
                 
-                let reportFilePath = reportsFolderURL.appendingPathComponent(reportFile).path
                 let csvAttachment = Attachment(
-                    filePath: reportFilePath
+                    filePath: reportFile.path,
+                    name: attachmentName
                 )
                 
                 // Prepare the actual mails
@@ -248,9 +250,9 @@ public class SunnyPortalReporter:SMTPClient{
                     additionalHeaders: ["REPLY-TO": replyAddress]
                 )
                 
-                emailsToSend.append((mail:reportMail, attachmentFile:reportFilePath))
-                
+                emailsToSend.append((mail:reportMail, reportFile:reportFile))
             }
+            
         }
         
         if emailsToSend.count > 0 {
@@ -276,9 +278,9 @@ public class SunnyPortalReporter:SMTPClient{
                                         // Cleanup Attachment after succesfull send
                                         let finishedMail = $0
                                         let origin = emailsToSend.filter{($0.mail.id==finishedMail.id)}.first
-                                        let attachmentFile = origin?.attachmentFile
-                                        if FileManager.default.fileExists(atPath: attachmentFile!){
-                                            try? FileManager.default.removeItem(atPath: attachmentFile!)
+                                        let parsedReport = origin?.reportFile
+                                        if FileManager.default.fileExists(atPath: parsedReport!.path){
+                                            try? FileManager.default.removeItem(atPath: parsedReport!.path)
                                         }
                                     })
                                     
@@ -288,7 +290,6 @@ public class SunnyPortalReporter:SMTPClient{
             
         }
     }
-    
     
     private func formatReport(source:String)->String{
         

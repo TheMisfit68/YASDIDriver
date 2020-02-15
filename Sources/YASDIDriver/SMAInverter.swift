@@ -15,20 +15,20 @@ import JVCocoa
 //For handling device searches asynchroniously
 
 var callBackFunctionForYasdiEvents = {
-    (event: TYASDIDetectionSub, deviceHandle: UInt32, param1: UInt32)->()  in
-    
-    switch event{
-    case YASDI_EVENT_DEVICE_ADDED:
-        JVDebugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) added")
-    case YASDI_EVENT_DEVICE_REMOVED:
-        JVDebugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) removed")
-    case YASDI_EVENT_DEVICE_SEARCH_END:
-        JVDebugger.shared.log(debugLevel: .Info, "No more devices found")
-    case YASDI_EVENT_DOWNLOAD_CHANLIST:
-        JVDebugger.shared.log(debugLevel: .Info, "Channels downloaded")
-    default:
-        JVDebugger.shared.log(debugLevel: .Error, "Unkwown event occured during async device detection")
-    }
+//    (event: TYASDIDetectionSub, deviceHandle: UInt32, param1: UInt32)->()  in
+//
+//    switch event{
+//    case YASDI_EVENT_DEVICE_ADDED:
+//        JVDebugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) added")
+//    case YASDI_EVENT_DEVICE_REMOVED:
+//        JVDebugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) removed")
+//    case YASDI_EVENT_DEVICE_SEARCH_END:
+//        JVDebugger.shared.log(debugLevel: .Info, "No more devices found")
+//    case YASDI_EVENT_DOWNLOAD_CHANLIST:
+//        JVDebugger.shared.log(debugLevel: .Info, "Channels downloaded")
+//    default:
+//        JVDebugger.shared.log(debugLevel: .Error, "Unkwown event occured during async device detection")
+//    }
 }
 
 
@@ -53,6 +53,7 @@ public class SMAInverter{
         let currentLocalHour = Calendar.current.component(Calendar.Component.hour, from: systemTimeStamp)
         return sunnyHours ~= currentLocalHour
     }
+    private static var InverterChecker:Timer? = nil
     
     var serial: Int?{return inverterRecord.serial}
     var number: Handle?{return inverterRecord.number}
@@ -74,17 +75,27 @@ public class SMAInverter{
     private var pollingTimer: Timer! = nil
     
     // MARK: - Inverter setup
-    public class func handleAllYasdiEvents(){
-        yasdiMasterAddEventListener(&callBackFunctionForYasdiEvents, YASDI_EVENT_DEVICE_DETECTION)
-    }
+//    public class func HandleAllYasdiEvents(){
+//        yasdiMasterAddEventListener(&callBackFunctionForYasdiEvents, YASDI_EVENT_DEVICE_DETECTION)
+//    }
     
-    public class func createInverters(maxNumberToSearch maxNumber:Int){
+    public class func CreateInverters(maxNumberToSearch maxNumber:Int){
+        //TODO: - remove this message after testing
+        print("🌤🌤🌤 Cheking for Inverters again 🌤🌤🌤")
+        
         if SMAInverter.ExpectedToBeOnline{
             
             if let devices:[Handle] = searchDevices(maxNumberToSearch:maxNumber){
-                for device in devices{
-                    let inverter = SMAInverter(device)
-                    OnlineInverters.append(inverter)
+                if (devices.count > 0) {
+                    for device in devices{
+                        let inverter = SMAInverter(device)
+                        OnlineInverters.append(inverter)
+                    }
+                }else{
+                    //TODO: - remove this message after testing
+                    print("🌤NO inverter found🌤")
+                    if InverterChecker != nil { InverterChecker?.invalidate() }
+                    InverterChecker = Timer.scheduledTimer(withTimeInterval: 3600, repeats: false) { timer in CreateInverters(maxNumberToSearch: maxNumber) }
                 }
             }
         }
@@ -279,7 +290,7 @@ public class SMAInverter{
             if channelType == .allChannels{
                 channelTypesToRead = [ChannelsType.allChannels, ChannelsType.parameterChannels, ChannelsType.testChannels]
             }
-                        
+            
             let dateFormatter = DateFormatter()
             dateFormatter.timeZone = TimeZone.current
             dateFormatter.dateFormat = "dd-MM-yyyy" // Local date string
