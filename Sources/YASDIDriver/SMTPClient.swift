@@ -20,7 +20,7 @@ public class SMTPClient{
     public init(){
         
         smtpSettings = standardUserDefaults.dictionary(forKey: "SMTPsettings")!
-        
+
         self.smtpConnection = SMTP(
             hostname: smtpSettings["Server"] as! String,
             email: smtpSettings["UserName"] as! String,

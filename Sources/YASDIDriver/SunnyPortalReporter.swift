@@ -19,7 +19,7 @@ let ccReportToLocalMail = true
 @available(OSX 10.15, *)
 public class SunnyPortalReporter:SMTPClient{
     
-    let disableReporter = false
+    let disableMails = true
     var sunnyPortalSettings:[String:Any] = [:]
     
     let channelsToReport:[String] = ["E-Total", "h-Total", "h-On", "Netz-Ein", "Event-Cnt", "Seriennummer", "Pac", "Iac-Ist", "Ipv", "Upv max"]
@@ -59,6 +59,10 @@ public class SunnyPortalReporter:SMTPClient{
         mailDateFormatter.dateFormat = "dd/MM/yyyy"
         mailDateFormatter.timeZone = Calendar.autoupdatingCurrent.timeZone
         
+        let documentsFolderURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        reportsFolderURL = documentsFolderURL.appendingPathComponent("YASDI-reports")
+        FileManager.default.checkForDirectory(reportsFolderURL, createIfNeeded: true)
+        
         super.init()
         
         sunnyPortalSettings = standardUserDefaults.dictionary(forKey: "SunnyPortalSettings")!
@@ -73,36 +77,35 @@ public class SunnyPortalReporter:SMTPClient{
     
     private func sendReport(){
         
-        if disableReporter == false{
+        let startOfReport = Date(timeIntervalSince1970: sunnyPortalSettings["StartOfNextReport"] as! Double)
+        let endOfReport:Date
+        let now = Date()
+        let minusOneHour = DateComponents(hour: -1)
+        var oneHourAgo = Calendar.current.date(byAdding: minusOneHour, to: now)
+        oneHourAgo = Calendar.autoupdatingCurrent.date(bySetting: .minute, value: 0, of: oneHourAgo!)
+        endOfReport = Calendar.autoupdatingCurrent.date(bySetting: .second, value: 0, of: oneHourAgo!)!
+        reportsPeriod = (start:startOfReport.timeIntervalSince1970,
+                         end:endOfReport.timeIntervalSince1970)
+//        reportsPeriod = (start:1581838312.55486,
+//                                     end:endOfReport.timeIntervalSince1970)
+        sunnyPortalSettings["StartOfNextReport"]  = reportsPeriod.end+1
+        standardUserDefaults.set(sunnyPortalSettings, forKey: "SunnyPortalSettings")
+        standardUserDefaults.synchronize()
+        
+        
+        if let inverters = SMAInverter.ArchivedInverters{
             
-            let startOfReport = Date(timeIntervalSince1970: sunnyPortalSettings["StartOfNextReport"] as! Double)
-            let endOfReport:Date
-            let now = Date()
-            let minusOneHour = DateComponents(hour: -1)
-            var oneHourAgo = Calendar.current.date(byAdding: minusOneHour, to: now)
-            oneHourAgo = Calendar.autoupdatingCurrent.date(bySetting: .minute, value: 0, of: oneHourAgo!)
-            endOfReport = Calendar.autoupdatingCurrent.date(bySetting: .second, value: 0, of: oneHourAgo!)!
-            
-            reportsPeriod = (start:startOfReport.timeIntervalSince1970,
-                                         end:endOfReport.timeIntervalSince1970)
-            
-            if let inverters = SMAInverter.ArchivedInverters{
+            inverters.forEach{
+                inverterSerial = $0
                 
-                inverters.forEach{
-                    inverterSerial = $0
+                reportData = nil
+                searchUnarchivedData()
+                if reportData != nil {
+                    saveAsCSVFiles()
+                    sendEmails()
                     
-                    reportData = nil
-                    searchUnarchivedData()
-                    if reportData != nil {
-                        saveAsCSVFiles()
-                        sendEmails()
-                        
-                    }
                 }
             }
-            
-            sunnyPortalSettings["StartOfNextReport"]  = reportsPeriod.end+1
-            standardUserDefaults.set(sunnyPortalSettings, forKey: "SunnyPortalSettings")
         }
     }
     
@@ -179,10 +182,6 @@ public class SunnyPortalReporter:SMTPClient{
             csvSource = formatReport(source: csvSource)
             
             // Save the csv-source to Disk
-            let documentsFolderURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            reportsFolderURL = documentsFolderURL.appendingPathComponent("YASDI-reports")
-            FileManager.default.checkForDirectory(reportsFolderURL, createIfNeeded: true)
-                        
             let fileDateString = fileDateFormatter.string(from: date)
             let csvFilename = "SunnyPortalExport\(fileDateString).csv"
             let csvFileUrl = reportsFolderURL.appendingPathComponent(csvFilename)
@@ -203,91 +202,99 @@ public class SunnyPortalReporter:SMTPClient{
     
     private func sendEmails(){
         
-        let filesInReportFolder = FileManager.default.enumerator(atPath: reportsFolderURL.path)
-        var emailsToSend:[(mail:Mail, reportFile:URL)] = []
-        
-        while let fileName = filesInReportFolder?.nextObject() as? String {
-            if (fileName.hasSuffix(".csv")){
-                let reportName = fileName
-                let reportFile = reportsFolderURL.appendingPathComponent(reportName)
-                
-                let reportDateString = String(reportName[reportName.range(of: "\\d\\d\\d\\d\\d\\d\\d\\d\\s\\[\\d\\d\\]",options: .regularExpression)!])
-                let reportDate = fileDateFormatter.date(from: reportDateString)!
-                let mailDateString = mailDateFormatter.string(from: reportDate)
-                
-                let attachmentName = reportName.replace(matchPattern: "\\s\\[\\d\\d\\]", replacementPattern: "", useRegex: true)
-
-                let fromAddress = sunnyPortalSettings["Account"] as! String
-                let toAddress = "datacenter@sunny-portal.de"
-                let replyAddress = fromAddress
-                let testAddress = replyAddress
-                
-                let sender:Mail.User = Mail.User(name: "SunnyPortalAccount", email: fromAddress)
-                
-                var recepients:[Mail.User] = []
-                recepients.append( Mail.User(name: "SunnyPortal", email:toAddress) )
-                
-                var ccRecepients:[Mail.User] = []
-                #if DEBUG
-                if ccReportToLocalMail{
-                    ccRecepients.append( Mail.User(name: "TestUser", email: testAddress))
+        if disableMails == false{
+            
+            let filesInReportFolder = FileManager.default.enumerator(atPath: reportsFolderURL.path)
+            var emailsToSend:[(mail:Mail, reportFile:URL)] = []
+            
+            while let fileName = filesInReportFolder?.nextObject() as? String {
+                if (fileName.hasSuffix(".csv")){
+                    let reportName = fileName
+                    let reportFile = reportsFolderURL.appendingPathComponent(reportName)
+                    
+                    let reportDateString = String(reportName[reportName.range(of: "\\d\\d\\d\\d\\d\\d\\d\\d\\s\\[\\d\\d\\]",options: .regularExpression)!])
+                    let reportDate = fileDateFormatter.date(from: reportDateString)!
+                    let mailDateString = mailDateFormatter.string(from: reportDate)
+                    
+                    let attachmentName = reportName.replace(matchPattern: "\\s\\[\\d\\d\\]", replacementPattern: "", useRegex: true)
+                    
+                    let fromAddress = sunnyPortalSettings["Account"] as! String
+                    let toAddress = "datacenter@sunny-portal.de"
+                    let replyAddress = fromAddress
+                    let testAddress = replyAddress
+                    
+                    let sender:Mail.User = Mail.User(name: "SunnyPortalAccount", email: fromAddress)
+                    
+                    var recepients:[Mail.User] = []
+                    recepients.append( Mail.User(name: "SunnyPortal", email:toAddress) )
+                    
+                    var ccRecepients:[Mail.User] = []
+                    #if DEBUG
+                    if ccReportToLocalMail{
+                        ccRecepients.append( Mail.User(name: "TestUser", email: testAddress))
+                    }
+                    #endif
+                    
+                    let csvAttachment = Attachment(
+                        filePath: reportFile.path,
+                        name: attachmentName
+                    )
+                    
+                    // Prepare the actual mails
+                    let reportMail = Mail(
+                        from: sender,
+                        to: recepients,
+                        cc: ccRecepients,
+                        subject: "SUNNY-MAIL \(mailDateString)...",
+                        text: "This mail was send automatically by Sunny Data Control 3.9.3.4. Please do not reply...",
+                        attachments: [csvAttachment],
+                        additionalHeaders: ["REPLY-TO": replyAddress]
+                    )
+                    
+                    emailsToSend.append((mail:reportMail, reportFile:reportFile))
                 }
-                #endif
                 
-                let csvAttachment = Attachment(
-                    filePath: reportFile.path,
-                    name: attachmentName
-                )
-                
-                // Prepare the actual mails
-                let reportMail = Mail(
-                    from: sender,
-                    to: recepients,
-                    cc: ccRecepients,
-                    subject: "SUNNY-MAIL \(mailDateString)...",
-                    text: "This mail was send automatically by Sunny Data Control 3.9.3.4. Please do not reply...",
-                    attachments: [csvAttachment],
-                    additionalHeaders: ["REPLY-TO": replyAddress]
-                )
-                
-                emailsToSend.append((mail:reportMail, reportFile:reportFile))
             }
             
-        }
-        
-        if emailsToSend.count > 0 {
-            let allEmails = emailsToSend.map{($0.mail)}
-            
-            smtpConnection.send(allEmails,
-                                
-                                progress: { (mail, error) in
-                                    // This optional callback gets called after each `Mail` is sent.
-                                    // `mail` is the attempted `Mail`, `error` is the error if one occured.
-                                    if error != nil{
-                                        JVDebugger.shared.log(debugLevel: .Error, "Failed to send Sunny-portal-report: \(error!)")
-                                    }else{
-                                        
-                                    }
+            if emailsToSend.count > 0 {
+                let allEmails = emailsToSend.map{($0.mail)}
+                
+                smtpConnection.send(allEmails,
                                     
-            },
-                                completion: { (sent, failed) in
-                                    // This optional callback gets called after all the mails have been sent.
-                                    // `sent` is an array of the successfully sent `Mail`s.
-                                    // `failed` is an array of (Mail, Error)--the failed `Mail`s and their corresponding errors.
-                                    sent.forEach({
-                                        // Cleanup Attachment after succesfull send
-                                        let finishedMail = $0
-                                        let origin = emailsToSend.filter{($0.mail.id==finishedMail.id)}.first
-                                        let parsedReport = origin?.reportFile
-                                        if FileManager.default.fileExists(atPath: parsedReport!.path){
-                                            try? FileManager.default.removeItem(atPath: parsedReport!.path)
+                                    progress: { (mail, error) in
+                                        // This optional callback gets called after each `Mail` is sent.
+                                        // `mail` is the attempted `Mail`, `error` is the error if one occured.
+                                        if error != nil{
+                                            JVDebugger.shared.log(debugLevel: .Error, "Failed to send Sunny-portal-report: \(error!)")
+                                        }else{
+                                            
                                         }
-                                    })
-                                    
+                                        
+                },
+                                    completion: { (sent, failed) in
+                                        // This optional callback gets called after all the mails have been sent.
+                                        // `sent` is an array of the successfully sent `Mail`s.
+                                        sent.forEach({
+                                            // Cleanup Attachment after succesfull send
+                                            let finishedMail = $0
+                                            let origin = emailsToSend.filter{($0.mail.id==finishedMail.id)}.first
+                                            let parsedReport = origin?.reportFile
+                                            if FileManager.default.fileExists(atPath: parsedReport!.path){
+                                                try? FileManager.default.removeItem(atPath: parsedReport!.path)
+                                            }
+                                        })
+                                        
+                                        // `failed` is an array of (Mail, Error)--the failed `Mail`s and their corresponding errors.
+                                        failed.forEach({
+                                            let failedMail = $0
+                                            let error = failedMail.1
+                                            JVDebugger.shared.log(debugLevel: .Error, "Failed to send Sunny-portal-report: \(error)")
+                                        })
+                                        
+                }
+                )
+                
             }
-            )
-            
-            
         }
     }
     
