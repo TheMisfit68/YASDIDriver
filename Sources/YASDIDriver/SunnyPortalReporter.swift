@@ -19,7 +19,7 @@ let ccReportToLocalMail = true
 @available(OSX 10.15, *)
 public class SunnyPortalReporter:SMTPClient{
     
-    let disableMails = true
+    let disableExternalMails = false
     var sunnyPortalSettings:[String:Any] = [:]
     
     let channelsToReport:[String] = ["E-Total", "h-Total", "h-On", "Netz-Ein", "Event-Cnt", "Seriennummer", "Pac", "Iac-Ist", "Ipv", "Upv max"]
@@ -86,8 +86,6 @@ public class SunnyPortalReporter:SMTPClient{
         endOfReport = Calendar.autoupdatingCurrent.date(bySetting: .second, value: 0, of: oneHourAgo!)!
         reportsPeriod = (start:startOfReport.timeIntervalSince1970,
                          end:endOfReport.timeIntervalSince1970)
-//        reportsPeriod = (start:1581838312.55486,
-//                                     end:endOfReport.timeIntervalSince1970)
         sunnyPortalSettings["StartOfNextReport"]  = reportsPeriod.end+1
         standardUserDefaults.set(sunnyPortalSettings, forKey: "SunnyPortalSettings")
         standardUserDefaults.synchronize()
@@ -202,45 +200,51 @@ public class SunnyPortalReporter:SMTPClient{
     
     private func sendEmails(){
         
-        if disableMails == false{
-            
-            let filesInReportFolder = FileManager.default.enumerator(atPath: reportsFolderURL.path)
-            var emailsToSend:[(mail:Mail, reportFile:URL)] = []
-            
-            while let fileName = filesInReportFolder?.nextObject() as? String {
-                if (fileName.hasSuffix(".csv")){
-                    let reportName = fileName
-                    let reportFile = reportsFolderURL.appendingPathComponent(reportName)
-                    
-                    let reportDateString = String(reportName[reportName.range(of: "\\d\\d\\d\\d\\d\\d\\d\\d\\s\\[\\d\\d\\]",options: .regularExpression)!])
-                    let reportDate = fileDateFormatter.date(from: reportDateString)!
-                    let mailDateString = mailDateFormatter.string(from: reportDate)
-                    
-                    let attachmentName = reportName.replace(matchPattern: "\\s\\[\\d\\d\\]", replacementPattern: "", useRegex: true)
-                    
-                    let fromAddress = sunnyPortalSettings["Account"] as! String
-                    let toAddress = "datacenter@sunny-portal.de"
-                    let replyAddress = fromAddress
-                    let testAddress = replyAddress
-                    
-                    let sender:Mail.User = Mail.User(name: "SunnyPortalAccount", email: fromAddress)
-                    
-                    var recepients:[Mail.User] = []
-                    recepients.append( Mail.User(name: "SunnyPortal", email:toAddress) )
-                    
-                    var ccRecepients:[Mail.User] = []
-                    #if DEBUG
-                    if ccReportToLocalMail{
-                        ccRecepients.append( Mail.User(name: "TestUser", email: testAddress))
-                    }
-                    #endif
-                    
-                    let csvAttachment = Attachment(
-                        filePath: reportFile.path,
-                        name: attachmentName
-                    )
-                    
-                    // Prepare the actual mails
+        let filesInReportFolder = FileManager.default.enumerator(atPath: reportsFolderURL.path)
+        var emailsToSend:[(mail:Mail, reportFile:URL)] = []
+        
+        while let fileName = filesInReportFolder?.nextObject() as? String {
+            if (fileName.hasSuffix(".csv")){
+                let reportName = fileName
+                let reportFile = reportsFolderURL.appendingPathComponent(reportName)
+                
+                let reportDateString = String(reportName[reportName.range(of: "\\d\\d\\d\\d\\d\\d\\d\\d\\s\\[\\d\\d\\]",options: .regularExpression)!])
+                let reportDate = fileDateFormatter.date(from: reportDateString)!
+                let mailDateString = mailDateFormatter.string(from: reportDate)
+                
+                let attachmentName = reportName.replace(matchPattern: "\\s\\[\\d\\d\\]", replacementPattern: "", useRegex: true)
+                
+                let fromAddress = sunnyPortalSettings["Account"] as! String
+                let toAddress = "datacenter@sunny-portal.de"
+                let replyAddress = fromAddress
+                let testAddress = replyAddress
+                
+                let sender:Mail.User = Mail.User(name: "SunnyPortalAccount", email: fromAddress)
+                
+                var recepients:[Mail.User] = []
+                recepients.append( Mail.User(name: "SunnyPortal", email:toAddress) )
+                
+                var ccRecepients:[Mail.User] = []
+                
+                if disableExternalMails{
+                    recepients.removeAll()
+                }
+                
+                #if DEBUG
+                if recepients.count == 0 {
+                    recepients.append( Mail.User(name: "TestUser", email: testAddress))
+                }else{
+                    ccRecepients.append( Mail.User(name: "TestUser", email: testAddress))
+                }
+                #endif
+                
+                let csvAttachment = Attachment(
+                    filePath: reportFile.path,
+                    name: attachmentName
+                )
+                
+                // Prepare the actual mails
+                if recepients.count > 0{
                     let reportMail = Mail(
                         from: sender,
                         to: recepients,
@@ -253,48 +257,48 @@ public class SunnyPortalReporter:SMTPClient{
                     
                     emailsToSend.append((mail:reportMail, reportFile:reportFile))
                 }
-                
             }
             
-            if emailsToSend.count > 0 {
-                let allEmails = emailsToSend.map{($0.mail)}
-                
-                smtpConnection.send(allEmails,
+        }
+        
+        if emailsToSend.count > 0 {
+            let allEmails = emailsToSend.map{($0.mail)}
+            
+            smtpConnection.send(allEmails,
+                                
+                                progress: { (mail, error) in
+                                    // This optional callback gets called after each `Mail` is sent.
+                                    // `mail` is the attempted `Mail`, `error` is the error if one occured.
+                                    if error != nil{
+                                        JVDebugger.shared.log(debugLevel: .Error, "Failed to send Sunny-portal-report: \(error!)")
+                                    }else{
+                                        
+                                    }
                                     
-                                    progress: { (mail, error) in
-                                        // This optional callback gets called after each `Mail` is sent.
-                                        // `mail` is the attempted `Mail`, `error` is the error if one occured.
-                                        if error != nil{
-                                            JVDebugger.shared.log(debugLevel: .Error, "Failed to send Sunny-portal-report: \(error!)")
-                                        }else{
-                                            
+            },
+                                completion: { (sent, failed) in
+                                    // This optional callback gets called after all the mails have been sent.
+                                    // `sent` is an array of the successfully sent `Mail`s.
+                                    sent.forEach({
+                                        // Cleanup Attachment after succesfull send
+                                        let finishedMail = $0
+                                        let origin = emailsToSend.filter{($0.mail.id==finishedMail.id)}.first
+                                        let parsedReport = origin?.reportFile
+                                        if FileManager.default.fileExists(atPath: parsedReport!.path){
+                                            try? FileManager.default.removeItem(atPath: parsedReport!.path)
                                         }
-                                        
-                },
-                                    completion: { (sent, failed) in
-                                        // This optional callback gets called after all the mails have been sent.
-                                        // `sent` is an array of the successfully sent `Mail`s.
-                                        sent.forEach({
-                                            // Cleanup Attachment after succesfull send
-                                            let finishedMail = $0
-                                            let origin = emailsToSend.filter{($0.mail.id==finishedMail.id)}.first
-                                            let parsedReport = origin?.reportFile
-                                            if FileManager.default.fileExists(atPath: parsedReport!.path){
-                                                try? FileManager.default.removeItem(atPath: parsedReport!.path)
-                                            }
-                                        })
-                                        
-                                        // `failed` is an array of (Mail, Error)--the failed `Mail`s and their corresponding errors.
-                                        failed.forEach({
-                                            let failedMail = $0
-                                            let error = failedMail.1
-                                            JVDebugger.shared.log(debugLevel: .Error, "Failed to send Sunny-portal-report: \(error)")
-                                        })
-                                        
-                }
-                )
-                
+                                    })
+                                    
+                                    // `failed` is an array of (Mail, Error)--the failed `Mail`s and their corresponding errors.
+                                    failed.forEach({
+                                        let failedMail = $0
+                                        let error = failedMail.1
+                                        JVDebugger.shared.log(debugLevel: .Error, "Failed to send Sunny-portal-report: \(error)")
+                                    })
+                                    
             }
+            )
+            
         }
     }
     
@@ -310,6 +314,10 @@ public class SunnyPortalReporter:SMTPClient{
         csvSource = reportPrefix+csvSource // Add bytes 0xFF, 0xFE to the beginning of the report
         return csvSource
         
+    }
+    
+    private func sendDeviceDefinitionFile(){
+        //TODO: - Send .dti-file from here
     }
     
 }
