@@ -20,6 +20,7 @@ let ccReportToLocalMail = true
 public class SunnyPortalReporter:SMTPClient{
     
     let disableExternalMails = false
+    
     var sunnyPortalSettings:[String:Any] = [:]
     
     let channelsToReport:[String] = ["E-Total", "h-Total", "h-On", "Netz-Ein", "Event-Cnt", "Seriennummer", "Pac", "Iac-Ist", "Ipv", "Upv max"]
