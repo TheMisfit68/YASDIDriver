@@ -77,13 +77,16 @@ public class SunnyPortalReporter:SMTPClient{
     
     private func sendReport(){
         
-        let startOfReport = Date(timeIntervalSince1970: sunnyPortalSettings["StartOfNextReport"] as! Double)
+        var startOfReport = Date(timeIntervalSince1970: sunnyPortalSettings["StartOfNextReport"] as! Double)
         let endOfReport:Date
         let now = Date()
         let minusOneHour = DateComponents(hour: -1)
         var oneHourAgo = Calendar.current.date(byAdding: minusOneHour, to: now)
         oneHourAgo = Calendar.autoupdatingCurrent.date(bySetting: .minute, value: 0, of: oneHourAgo!)
         endOfReport = Calendar.autoupdatingCurrent.date(bySetting: .second, value: 0, of: oneHourAgo!)!
+        if startOfReport > endOfReport {
+            startOfReport = endOfReport
+        }
         reportsPeriod = (start:startOfReport.timeIntervalSince1970,
                          end:endOfReport.timeIntervalSince1970)
         sunnyPortalSettings["StartOfNextReport"]  = reportsPeriod.end+1
