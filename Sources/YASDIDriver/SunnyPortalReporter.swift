@@ -11,16 +11,11 @@ import ClibYASDI
 import JVCocoa
 import SwiftSMTP
 
-
-#if DEBUG
-let ccReportToLocalMail = true
-#endif
+let disableExternalMails = false
 
 @available(OSX 10.15, *)
 public class SunnyPortalReporter:SMTPClient{
-    
-    let disableExternalMails = false
-    
+        
     var sunnyPortalSettings:[String:Any] = [:]
     
     let channelsToReport:[String] = ["E-Total", "h-Total", "h-On", "Netz-Ein", "Event-Cnt", "Seriennummer", "Pac", "Iac-Ist", "Ipv", "Upv max"]
@@ -77,37 +72,36 @@ public class SunnyPortalReporter:SMTPClient{
     
     
     private func sendReport(){
-        
-        var startOfReport = Date(timeIntervalSince1970: sunnyPortalSettings["StartOfNextReport"] as! Double)
-        let endOfReport:Date
         let now = Date()
-        let minusOneHour = DateComponents(hour: -1)
-        var oneHourAgo = Calendar.current.date(byAdding: minusOneHour, to: now)
-        oneHourAgo = Calendar.autoupdatingCurrent.date(bySetting: .minute, value: 0, of: oneHourAgo!)
-        endOfReport = Calendar.autoupdatingCurrent.date(bySetting: .second, value: 0, of: oneHourAgo!)!
-        if startOfReport > endOfReport {
-            startOfReport = endOfReport
-        }
-        reportsPeriod = (start:startOfReport.timeIntervalSince1970,
-                         end:endOfReport.timeIntervalSince1970)
-        sunnyPortalSettings["StartOfNextReport"]  = reportsPeriod.end+1
-        standardUserDefaults.set(sunnyPortalSettings, forKey: "SunnyPortalSettings")
-        standardUserDefaults.synchronize()
+
+        let startOfReport = Date(timeIntervalSince1970: sunnyPortalSettings["StartOfNextReport"] as! Double)
         
-        
-        if let inverters = SMAInverter.ArchivedInverters{
+        // Round up to the next full hour
+        var endOfReport = startOfReport
+        endOfReport = Calendar.autoupdatingCurrent.date(bySetting: .second, value: 0, of: endOfReport)!
+        endOfReport = Calendar.autoupdatingCurrent.date(bySetting: .minute, value: 0, of: endOfReport)!
+
+        if (now > endOfReport){
+           
+            reportsPeriod = (start:startOfReport.timeIntervalSince1970,
+                             end:endOfReport.timeIntervalSince1970)
             
-            inverters.forEach{
-                inverterSerial = $0
+            if let inverters = SMAInverter.ArchivedInverters{
                 
-                reportData = nil
-                searchUnarchivedData()
-                if reportData != nil {
-                    saveAsCSVFiles()
-                    sendEmails()
+                inverters.forEach{
+                    inverterSerial = $0
                     
+                    reportData = nil
+                    searchUnarchivedData()
+                    if reportData != nil {
+                        saveAsCSVFiles()
+                        sendEmails()
+                    }
                 }
             }
+            
+            sunnyPortalSettings["StartOfNextReport"] = reportsPeriod.end+1
+            standardUserDefaults.set(sunnyPortalSettings, forKey: "SunnyPortalSettings")
         }
     }
     
