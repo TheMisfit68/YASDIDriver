@@ -10,25 +10,24 @@ import ClibYASDI
 import Cocoa
 import JVCocoa
 
-
 //FIXME: - Not used for now, crashes the app
 //For handling device searches asynchroniously
 
 var callBackFunctionForYasdiEvents = {
-//    (event: TYASDIDetectionSub, deviceHandle: UInt32, param1: UInt32)->()  in
-//
-//    switch event{
-//    case YASDI_EVENT_DEVICE_ADDED:
-//        JVDebugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) added")
-//    case YASDI_EVENT_DEVICE_REMOVED:
-//        JVDebugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) removed")
-//    case YASDI_EVENT_DEVICE_SEARCH_END:
-//        JVDebugger.shared.log(debugLevel: .Info, "No more devices found")
-//    case YASDI_EVENT_DOWNLOAD_CHANLIST:
-//        JVDebugger.shared.log(debugLevel: .Info, "Channels downloaded")
-//    default:
-//        JVDebugger.shared.log(debugLevel: .Error, "Unkwown event occured during async device detection")
-//    }
+    //    (event: TYASDIDetectionSub, deviceHandle: UInt32, param1: UInt32)->()  in
+    //
+    //    switch event{
+    //    case YASDI_EVENT_DEVICE_ADDED:
+    //        JVDebugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) added")
+    //    case YASDI_EVENT_DEVICE_REMOVED:
+    //        JVDebugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) removed")
+    //    case YASDI_EVENT_DEVICE_SEARCH_END:
+    //        JVDebugger.shared.log(debugLevel: .Info, "No more devices found")
+    //    case YASDI_EVENT_DOWNLOAD_CHANLIST:
+    //        JVDebugger.shared.log(debugLevel: .Info, "Channels downloaded")
+    //    default:
+    //        JVDebugger.shared.log(debugLevel: .Error, "Unkwown event occured during async device detection")
+    //    }
 }
 
 
@@ -38,14 +37,6 @@ var callBackFunctionForYasdiEvents = {
 @available(OSX 10.15, *)
 public class SMAInverter{
     
-    public static var OnlineInverters:[SMAInverter] = []
-    public static var ArchivedInverters:[Int]?{
-        let InvertersDataBase:JVSQLdbase! = YASDIDriver.InvertersDataBase
-        let sqlStatement = "SELECT DISTINCT Serial FROM Inverter"
-        let archivedInverters = InvertersDataBase.select(statement: sqlStatement)?.data.map{$0[0] as! Int}
-        return archivedInverters
-    }
-    
     private static var ExpectedToBeOnline:Bool{
         // Determines the hours between wich enough sun is expected to get the devices powered up
         let sunnyHours = (6...22)
@@ -53,7 +44,16 @@ public class SMAInverter{
         let currentLocalHour = Calendar.current.component(Calendar.Component.hour, from: systemTimeStamp)
         return sunnyHours ~= currentLocalHour
     }
-    private static var InverterChecker:Timer? = nil
+    
+    public static var OnlineInverters:[SMAInverter] = []
+    private static var OnlineInverterChecker:Timer?
+
+    public static var ArchivedInverters:[Int]?{
+        let InvertersDataBase:JVSQLdbase! = YASDIDriver.InvertersDataBase
+        let sqlStatement = "SELECT DISTINCT Serial FROM Inverter"
+        let archivedInverters = InvertersDataBase.select(statement: sqlStatement)?.data.map{$0[0] as! Int}
+        return archivedInverters
+    }
     
     var serial: Int?{return inverterRecord.serial}
     var number: Handle?{return inverterRecord.number}
@@ -75,28 +75,28 @@ public class SMAInverter{
     private var pollingTimer: Timer! = nil
     
     // MARK: - Inverter setup
-//    public class func HandleAllYasdiEvents(){
-//        yasdiMasterAddEventListener(&callBackFunctionForYasdiEvents, YASDI_EVENT_DEVICE_DETECTION)
-//    }
+    //    public class func HandleAllYasdiEvents(){
+    //        yasdiMasterAddEventListener(&callBackFunctionForYasdiEvents, YASDI_EVENT_DEVICE_DETECTION)
+    //    }
     
-    public class func CreateInverters(maxNumberToSearch maxNumber:Int){
-        //TODO: - remove this message after testing
-        print("🌤🌤🌤 Cheking for Inverters again 🌤🌤🌤")
+    public class func CreateInverters(){
         
-        if SMAInverter.ExpectedToBeOnline{
+        let numberOfInvertersToSearch = max(1, OnlineInverters.count+1)
+        if SMAInverter.ExpectedToBeOnline,
+            let devices:[Handle] = searchDevices(maxNumberToSearch:numberOfInvertersToSearch),
+            devices.count > OnlineInverters.count{
             
-            if let devices:[Handle] = searchDevices(maxNumberToSearch:maxNumber){
-                if (devices.count > 0) {
-                    for device in devices{
-                        let inverter = SMAInverter(device)
-                        OnlineInverters.append(inverter)
-                    }
-                }else{
-                    //TODO: - remove this message after testing
-                    print("🌤NO inverter found🌤")
-                    if InverterChecker != nil { InverterChecker?.invalidate() }
-                    InverterChecker = Timer.scheduledTimer(withTimeInterval: 3600, repeats: false) { timer in CreateInverters(maxNumberToSearch: maxNumber) }
-                }
+            for device in devices{
+                let inverter = SMAInverter(device)
+                OnlineInverters.append(inverter)
+            }
+            
+        }
+        
+        // Recheck for more online inverters periodicly
+        if OnlineInverterChecker == nil{
+            OnlineInverterChecker = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) {
+                timer in CreateInverters()
             }
         }
     }
