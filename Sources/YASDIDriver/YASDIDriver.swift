@@ -6,11 +6,13 @@ import JVCocoa
 @available(OSX 10.15, *)
 public class YASDIDriver{
     
+    
     static let ConfigFileName = "YasdiConfigFile.ini"
     static let InvertersDataFileName = "InvertersData.sqlite"
     
     static let DefaultFilemanager =  FileManager.default
-    static let ResourceFolder = Bundle.main.resourceURL?.appendingPathComponent("YASDI")
+    static let ResourceFolder = Bundle.module
+    
     static let SupportFolder = DefaultFilemanager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("YASDI")
     static let ConfigFile = SupportFolder?.appendingPathComponent(ConfigFileName)
     static let InvertersDataFile = SupportFolder?.appendingPathComponent(InvertersDataFileName)
@@ -59,7 +61,6 @@ public class YASDIDriver{
     
     private class func installResourcesInSupportFolder() {
         
-        
         if let supportFolder = SupportFolder {
             
             // Create supportFolder if needed
@@ -69,23 +70,22 @@ public class YASDIDriver{
             let supportfilesToInstall = [ConfigFile, InvertersDataFile]
             
             for supportfile in supportfilesToInstall{
+                
                 let allReadyInstalled = DefaultFilemanager.fileExists(atPath:supportfile!.path)
-                if !allReadyInstalled {
+                if !allReadyInstalled,
+                   let fileName = supportfile?.lastPathComponent,
+                   let resourceURL = ResourceFolder.url(forResource: fileName, withExtension: ""){
                     
-                    if let resourceFolder = ResourceFolder{
-                        
-                        let fileName = supportfile?.lastPathComponent
-                        let resourceURL = resourceFolder.appendingPathComponent(fileName!)
-                        
-                        do {
-                            try FileManager.default.copyItem(at: resourceURL, to: supportfile!)
-                        } catch {
-                            //TODO: - finish errorHandling
-                        }
+                    do {
+                        try FileManager.default.copyItem(at: resourceURL, to: supportfile!)
+                    } catch {
+                        //TODO: - finish errorHandling
                     }
+                    
                 }
             }
         }
+        
     }
     
     private class func loadDriversFromConfigFile()->Int?{

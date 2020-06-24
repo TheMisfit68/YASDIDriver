@@ -1,5 +1,5 @@
 //
-//  File.swift
+//  YASDITypes.swift
 //  
 //
 //  Created by Jan Verrept on 02/12/2019.

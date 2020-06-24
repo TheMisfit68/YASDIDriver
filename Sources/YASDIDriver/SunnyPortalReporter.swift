@@ -308,7 +308,10 @@ public class SunnyPortalReporter:SMTPClient{
         
         var csvSource = source
         csvSource = csvSource.replace(matchPattern: "\t", replacementPattern: dataSeperator) // Don't use Tabs but ";" as separator
-        csvSource = Array(csvSource).map({$0.isNewline ? "\r"+nullCharacter+"\n"+nullCharacter : String($0)+nullCharacter}).joined() // Add a null character to every character even newlines
+        
+        // Add a null character to every character even newlines
+        let nulSeperatedCsv = Array(csvSource).map({$0.isNewline ? "\r"+nullCharacter+"\n"+nullCharacter : String($0)+nullCharacter})
+        csvSource = nulSeperatedCsv.joined()
         csvSource = reportPrefix+csvSource // Add bytes 0xFF, 0xFE to the beginning of the report
         return csvSource
         
