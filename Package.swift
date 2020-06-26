@@ -27,7 +27,6 @@ let package = Package(
                 "JVCocoa",
                 "SwiftSMTP"
             ],
-            exclude: ["Artwork"],
             resources:[
                 .copy("YasdiConfigFile.ini"),
                 .copy("InvertersData.sqlite")
