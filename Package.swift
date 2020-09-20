@@ -28,9 +28,13 @@ let package = Package(
                 "SwiftSMTP"
             ],
             resources:[
-                .copy("YasdiConfigFile.ini"),
-                .copy("InvertersData.sqlite")
+//                .process("Resources/YASDI.framework"),
+                .copy("Resources/YasdiConfigFile.ini"),
+                .copy("Resources/InvertersData.sqlite")
             ]
-        )
+        ),
+        .testTarget(
+            name: "YASDIDriverTests",
+            dependencies: ["YASDIDriver"]),
     ]
 )

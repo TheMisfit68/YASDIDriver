@@ -31,7 +31,7 @@ public class YASDIDriver{
     
     public class func InstallDrivers()->[YASDIDriver]{
         
-        installResourcesInSupportFolder()
+        InstallResourcesInSupportFolder()
         if let dbasePath =  InvertersDataFile?.path, DefaultFilemanager.fileExists(atPath: dbasePath){
             InvertersDataBase = JVSQLdbase.Open(file:dbasePath)
         }
@@ -59,7 +59,7 @@ public class YASDIDriver{
         InvertersDataBase.close()
     }
     
-    private class func installResourcesInSupportFolder() {
+    private class func InstallResourcesInSupportFolder() {
         
         if let supportFolder = SupportFolder {
             
