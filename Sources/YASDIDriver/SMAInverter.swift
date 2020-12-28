@@ -6,7 +6,6 @@
 //  Copyright © 2017 OneClick. All rights reserved.
 //
 
-//import ClibYASDI
 import ClibYASDI
 import Cocoa
 import JVCocoa
@@ -19,23 +18,23 @@ var callBackFunctionForYasdiEvents = {
     //
     //    switch event{
     //    case YASDI_EVENT_DEVICE_ADDED:
-    //        JVDebugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) added")
+    //        Debugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) added")
     //    case YASDI_EVENT_DEVICE_REMOVED:
-    //        JVDebugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) removed")
+    //        Debugger.shared.log(debugLevel: .Info, "Device \(deviceHandle) removed")
     //    case YASDI_EVENT_DEVICE_SEARCH_END:
-    //        JVDebugger.shared.log(debugLevel: .Info, "No more devices found")
+    //        Debugger.shared.log(debugLevel: .Info, "No more devices found")
     //    case YASDI_EVENT_DOWNLOAD_CHANLIST:
-    //        JVDebugger.shared.log(debugLevel: .Info, "Channels downloaded")
+    //        Debugger.shared.log(debugLevel: .Info, "Channels downloaded")
     //    default:
-    //        JVDebugger.shared.log(debugLevel: .Error, "Unkwown event occured during async device detection")
+    //        Debugger.shared.log(debugLevel: .Error, "Unkwown event occured during async device detection")
     //    }
 }
 
 
-//Represents the fysical SMA-brand Solar inverter.
-//Uses the configured drivers to read values from the device
+// Represents the fysical (SMA-brand) Solar inverter.
+// Uses the configured drivers to read values from the device
 
-@available(OSX 10.15, *)
+
 public class SMAInverter{
     
     private static var ExpectedToBeOnline:Bool{
@@ -50,11 +49,13 @@ public class SMAInverter{
     private static var OnlineInverterChecker:Timer?
 
     public static var ArchivedInverters:[Int]?{
-        let InvertersDataBase:JVSQLdbase! = YASDIDriver.InvertersDataBase
+        let InvertersDataBase:SQLdatabase! = YASDIDriver.InvertersDataBase
         let sqlStatement = "SELECT DISTINCT Serial FROM Inverter"
         let archivedInverters = InvertersDataBase.select(statement: sqlStatement)?.data.map{$0[0] as! Int}
         return archivedInverters
     }
+    
+    public var display:InverterView!
     
     var serial: Int?{return inverterRecord.serial}
     var number: Handle?{return inverterRecord.number}
@@ -67,12 +68,10 @@ public class SMAInverter{
     public var parameterChannels:[Channel] = []
     public var testChannels:[Channel] = []
     
-    public let display:DigitalDisplayView
     public var measurementValues:[Measurement]? = nil
     public var parameterValues:[Measurement]? = nil // These values will not be used for now
     public var testValues:[Measurement]? = nil // These values will not be used for now
     
-    private let dataToDisplay:DataSummary
     private var pollingTimer: Timer! = nil
     
     // MARK: - Inverter setup
@@ -103,10 +102,9 @@ public class SMAInverter{
     }
     
     init(_ device: Handle){
-        
-        self.dataToDisplay = DataSummary(channelNames: ["Pac", "Upv-Ist", "E-Total"])
-        self.display = DigitalDisplayView(model:dataToDisplay)
-        
+                        
+        self.display = InverterView(dataSummary: DataSummary(inverter: self, channelNames: ["Pac", "Upv-Ist", "E-Total"]))
+
         composeInverterRecord(fromDevice:device)
         
         // Read all channels just once
@@ -117,7 +115,8 @@ public class SMAInverter{
         self.pollingTimer.tolerance = 1.0 // Give the processor some slack
         self.pollingTimer.fire()
         
-        JVDebugger.shared.log(debugLevel: .Succes, "Inverter \(name!) found online")
+        
+        Debugger.shared.log(debugLevel: .Succes, "Inverter \(name!) found online")
     }
     
     private class func searchDevices(maxNumberToSearch maxNumber:Int)->[Handle]?{
@@ -399,7 +398,7 @@ public class SMAInverter{
                 
             }
         }
-        dataToDisplay.createTextLines(fromInverter: self)
+        display.dataSummary.update()
     }
     
 }

@@ -10,17 +10,18 @@ import Foundation
 import ClibYASDI
 import JVCocoa
 import SwiftSMTP
+import os.log
 
 let disableExternalMails = false
 
-@available(OSX 10.15, *)
+
 public class SunnyPortalReporter:SMTPClient{
         
     var sunnyPortalSettings:[String:Any] = [:]
     
     let channelsToReport:[String] = ["E-Total", "h-Total", "h-On", "Netz-Ein", "Event-Cnt", "Seriennummer", "Pac", "Iac-Ist", "Ipv", "Upv max"]
     
-    let inverterDbase:JVSQLdbase = YASDIDriver.InvertersDataBase
+    let inverterDbase:SQLdatabase = YASDIDriver.InvertersDataBase
     var reportTimer:Timer!
     var inverterSerial:Int!
     var reportsPeriod:(start:Double, end:Double)!
@@ -189,7 +190,7 @@ public class SunnyPortalReporter:SMTPClient{
                 try csvSource.write(to: csvFileUrl, atomically: true, encoding: .windowsCP1252)
                 
             } catch {
-                JVDebugger.shared.log(debugLevel: .Error, "Failed to write Sunny-portal-report:\n\(error)")
+                Debugger.shared.log(debugLevel: .Native(logType:.error), "Failed to write Sunny-portal-report:\n\(error)")
             }
             
         }
@@ -268,7 +269,7 @@ public class SunnyPortalReporter:SMTPClient{
                                     // This optional callback gets called after each `Mail` is sent.
                                     // `mail` is the attempted `Mail`, `error` is the error if one occured.
                                     if error != nil{
-                                        JVDebugger.shared.log(debugLevel: .Error, "Failed to send Sunny-portal-report: \(error!)")
+                                        Debugger.shared.log(debugLevel:.Native(logType:.error), "Failed to send Sunny-portal-report: \(error!)")
                                     }else{
                                         
                                     }
@@ -291,7 +292,7 @@ public class SunnyPortalReporter:SMTPClient{
                                     failed.forEach({
                                         let failedMail = $0
                                         let error = failedMail.1
-                                        JVDebugger.shared.log(debugLevel: .Error, "Failed to send Sunny-portal-report: \(error)")
+                                        Debugger.shared.log(debugLevel:.Native(logType:.error), "Failed to send Sunny-portal-report: \(error)")
                                     })
                                     
             }

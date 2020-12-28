@@ -10,14 +10,15 @@ import Foundation
 import Cocoa
 import JVCocoa
 import SwiftSMTP
+import os.log
 
 
-@available(OSX 10.15, *)
+
 public class GSCNotifier:SMTPClient{
     
     var gscNotifierSettings:[String:Any] = [:]
     
-    let inverterDbase:JVSQLdbase = YASDIDriver.InvertersDataBase
+    let inverterDbase:SQLdatabase = YASDIDriver.InvertersDataBase
     var checkForGSCtimer:Timer!
     
     override public init() {
@@ -86,7 +87,7 @@ public class GSCNotifier:SMTPClient{
         
         smtpConnection.send(mailNotification) { (error) in
             if let error = error {
-                JVDebugger.shared.log(debugLevel: .Error, "Failed to send GSC-emailnotification:\n\(error)")
+                Debugger.shared.log(debugLevel:.Native(logType:.error), "Failed to send GSC-emailnotification:\n\(error)")
             }
         }
         

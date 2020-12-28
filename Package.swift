@@ -5,6 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "YASDIDriver",
+    platforms: [.macOS(.v11)],
     products: [
         // Products define the executables and libraries produced by a package, and make them visible to other packages.
         .library(
@@ -28,7 +29,6 @@ let package = Package(
                 "SwiftSMTP"
             ],
             resources:[
-//                .process("Resources/YASDI.framework"),
                 .copy("Resources/YasdiConfigFile.ini"),
                 .copy("Resources/InvertersData.sqlite")
             ]

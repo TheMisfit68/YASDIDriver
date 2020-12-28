@@ -1,9 +1,10 @@
 import Foundation
 import ClibYASDI
 import JVCocoa
+import os.log
 
 
-@available(OSX 10.15, *)
+
 public class YASDIDriver{
     
     
@@ -16,7 +17,7 @@ public class YASDIDriver{
     static let SupportFolder = DefaultFilemanager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("YASDI")
     static let ConfigFile = SupportFolder?.appendingPathComponent(ConfigFileName)
     static let InvertersDataFile = SupportFolder?.appendingPathComponent(InvertersDataFileName)
-    public static var InvertersDataBase:JVSQLdbase! = nil
+    public static var InvertersDataBase:SQLdatabase! = nil
     
     static var Drivers:[YASDIDriver] = []
     
@@ -33,7 +34,7 @@ public class YASDIDriver{
         
         InstallResourcesInSupportFolder()
         if let dbasePath =  InvertersDataFile?.path, DefaultFilemanager.fileExists(atPath: dbasePath){
-            InvertersDataBase = JVSQLdbase.Open(file:dbasePath)
+            InvertersDataBase = SQLdatabase.Open(file:dbasePath)
         }
         
         if let numberOfDrivers = loadDriversFromConfigFile(){
@@ -99,7 +100,7 @@ public class YASDIDriver{
         if resultCode != errorCode{
             return Int(numberOfAvailableDrivers.pointee)
         }else{
-            JVDebugger.shared.log(debugLevel: .Error, "Not able to load any drivers from '\(ConfigFile?.path ?? "")'")
+            Debugger.shared.log(debugLevel:.Native(logType:.error), "Not able to load any drivers from '\(ConfigFile?.path ?? "")'")
             return nil
         }
         
@@ -118,7 +119,7 @@ public class YASDIDriver{
             self.name = String(cString: driverName)
         }else{
             self.name = "Unknown driver"
-            JVDebugger.shared.log(debugLevel: .Error, "Unknown driver")
+            Debugger.shared.log(debugLevel:.Native(logType:.error), "Unknown driver")
         }
         
         self.state = State.offline
@@ -135,11 +136,11 @@ public class YASDIDriver{
         
         if resultCode != errorCode{
             state = State.online
-            JVDebugger.shared.log(debugLevel: .Succes, "Driver \(name) is now online")
+            Debugger.shared.log(debugLevel: .Succes, "Driver \(name) is now online")
             return true
         }else{
             state = State.offline
-            JVDebugger.shared.log(debugLevel: .Error, "Failed to set driver \(name) online")
+            Debugger.shared.log(debugLevel:.Native(logType:.error), "Failed to set driver \(name) online")
             return false
         }
         
@@ -148,7 +149,7 @@ public class YASDIDriver{
     private func setOffline(){
         yasdiMasterSetDriverOffline(Handle(number))
         state = State.offline
-        JVDebugger.shared.log(debugLevel: .Info, "Driver \(name) is back offline")
+        Debugger.shared.log(debugLevel:.Native(logType:.info), "Driver \(name) is back offline")
     }
     
 }
