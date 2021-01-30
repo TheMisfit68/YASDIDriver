@@ -31,10 +31,6 @@ let package = Package(
             resources:[
                 .copy("Resources/YasdiConfigFile.ini"),
                 .copy("Resources/InvertersData.sqlite"),
-				.copy("Binaries/libyasdi_drv_ip.1.8.1.dylib"),
-				.copy("Binaries/libyasdi_drv_serial.1.8.1.dylib"),
-				.copy("Binaries/libyasdi.1.8.1.dylib"),
-				.copy("Binaries/libyasdimaster.1.8.1.dylib")
             ]
         ),
         .testTarget(
