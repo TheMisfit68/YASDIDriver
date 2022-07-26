@@ -16,7 +16,7 @@ let package = Package(
         // Dependencies declare other packages that this package depends on.
         .package(name: "ClibYASDI", url: "https://github.com/TheMisfit68/ClibYASDI.git",.branch("master")),
         .package(name: "JVCocoa", url: "https://github.com/TheMisfit68/JVCocoa.git",  .branch("master")),
-        .package(name: "SwiftSMTP", url: "https://github.com/IBM-Swift/Swift-SMTP.git", .upToNextMajor(from:"5.1.2"))
+		.package(name: "SwiftSMTP", url: "https://github.com/IBM-Swift/Swift-SMTP.git", .branch("master")),
     ],
     targets: [
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
